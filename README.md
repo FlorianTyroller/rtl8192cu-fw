@@ -27,7 +27,10 @@ annotations and code (see [Legal](#legal)).
   dispatching through a per-state allowed-command bitmask.
 
 Full detail: [analysis/findings.md](analysis/findings.md) and the symbol
-database [analysis/annotations.tsv](analysis/annotations.tsv).
+database [analysis/annotations.tsv](analysis/annotations.tsv). Tool sources:
+[dis8051.py](tools/dis8051.py) · [fwl.py](tools/fwl.py) ·
+[fetch-firmware.sh](tools/fetch-firmware.sh) (directory browsing is on
+[GitHub](https://github.com/FlorianTyroller/rtl8192cu-fw), not Pages).
 
 ## Quick start
 
