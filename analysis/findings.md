@@ -65,14 +65,63 @@ targets inside the image on correct instruction boundaries (neighbors
       answering register access when wedged) — unexplored
 - main's large callees 0x6844, 0x7255, 0x7842 — unexplored
 
+## H2C command protocol (host ↔ firmware), fully decoded
+
+Driver side (rtlwifi rtl8192c/fw_common.c + reg values): the host has four
+4-byte mailboxes — REG_HMEBOX_0..3 at XDATA 0x01D0/0x01D4/0x01D8/0x01DC
+(command id byte + 3 arg bytes, extended args in HMEBOX_EXT at 0x0088+ for
+5–7 byte commands) — and announces "box N written" by setting bit N in
+REG_HMETFR = 0x01CC. The host considers a box free again when the
+corresponding HMETFR bit is cleared and MCUTST_1 (0x01C0)+N reads 0.
+
+Firmware side (confirmed by disassembly):
+
+- 0x5559 `h2c_service`: reads 0x01CC, mask 0x0F = pending boxes; for the
+  pending one, reads the box (4-byte register copies via the 0x435F helper),
+  stages id at 0x8AD0 and args at 0x8AD1+.
+- 0x565D: strips H2C_EXT (bit 7) from the id, calls 0x54A6.
+- 0x54A6 `h2c_dispatch`: a Keil C51 switch — table walker at 0x4394 over the
+  table at 0x54B0 (entries `{target_hi, target_lo, case_id}`, 00 00
+  terminator, default → 0x54DE):
+
+  | id | name (rtlwifi)  | handler |
+  |----|-----------------|---------|
+  | 2  | JOINBSSRPT      | 0x748B  |
+  | 3  | RSVDPAGE        | 0x74B8  |
+  | 5  | RSSI_REPORT     | 0x7500  |
+  | 6  | RA_MASK         | 0x7539  |
+  | 8  | P2P_PS_OFFLOAD  | 0x7552  |
+  | 9  | MAC_MODE_SEL    | 0x740F  |
+  | 32 | *(unknown)*     | 0x56A6  |
+  | 44 | *(unknown)*     | 0x759A  |
+  | 45 | *(unknown)*     | 0x541E  |
+  | 46 | *(unknown)*     | 0x7881  |
+  | 59 | *(unknown)*     | 0x7AC2  |
+  | 75 | *(unknown)*     | 0x7C2B  |
+  | —  | default         | 0x7485  |
+
+- 0x568A `h2c_ack_tail`: clears the processed mailbox bit, advances the
+  state ring at 0x8B51 (`+1 & 3`), sets bit 1 at 0x01C6 (host-visible ack),
+  returns.
+
+**The firmware understands six command IDs that Linux never sends** (32,
+44, 45, 46, 59, 75 — presumably used by Realtek's Windows driver; candidates:
+BT coexistence, AP mode offload, RF calibration). Conversely, Linux's
+SETPWRMODE (1), AP_OFFLOAD (0), MACID_PS_MODE (7), PWRM (15), CTW (24) and
+KEEP_ALIVE_CTRL (48) are *not* in this table — they must route through a
+second dispatch (open: the pre-dispatch call at 0x5EE4, or one of the other
+switch walkers at 0x43BA, 0x4DD9, 0x6532, 0x6933).
+
 ## Open leads
 
-1. Enumerate all 16 H2C command IDs; cross-reference handler addresses with
-   the command names in rtlwifi's rtl8192c/fw_common.c.
-2. 0x60F2 interrupt handler: RX/USB path, deadlock candidates.
-3. Group-key/rekey path: correlate with the field observation that outages
+1. Second H2C dispatch: where do cmds 0/1/7/15/24/48 land? Check 0x5EE4 and
+   the remaining switch walkers.
+2. Name the six Linux-unknown commands by reading their handlers
+   (0x56A6, 0x759A, 0x541E, 0x7881, 0x7AC2, 0x7C2B).
+3. 0x60F2 interrupt handler: RX/USB path, deadlock candidates.
+4. Group-key/rekey path: correlate with the field observation that outages
    cluster after the AP's hourly group rekey.
-4. 8051 emulator (SIM): run the image against stubbed registers, replay a
+5. 8051 emulator (SIM): run the image against stubbed registers, replay a
    captured pre-hang usbmon trace — the only debugger this chip will ever
    give us.
 
