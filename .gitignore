@@ -8,3 +8,4 @@ blobs/*
 
 # fetched kernel source copies (GPL, but keep the repo lean)
 kernelsrc/
+__pycache__/

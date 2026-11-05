@@ -1,0 +1,106 @@
+# Function census (recursive descent, TMSC 88.2)
+# addr	end	size	callers	term	name
+27DE	----	0	4	rom	
+29D9	----	0	27	rom	rom_get_arg0
+29F2	----	0	8	rom	rom_call_4
+2A6C	----	0	3	rom	
+2A7F	----	0	13	rom	rom_call_2
+2A8B	----	0	6	rom	
+2FD9	----	0	9	rom	rom_call_3
+323D	----	0	1	rom	
+3481	----	0	4	rom	
+34B7	----	0	3	rom	
+35AB	----	0	1	rom	
+3675	----	0	4	rom	
+3692	----	0	2	rom	
+36CB	----	0	1	rom	
+36E6	----	0	4	rom	
+3700	----	0	2	rom	
+3754	----	0	4	rom	
+4220	424D	45	28	ret	lib_reg_read
+424D	425F	18	8	ret	
+425F	4281	34	6	ret	
+4281	4297	22	14	ret	lib_14
+4297	42C2	43	1	ret	
+42C2	42FA	56	8	ret	
+42FA	4319	31	1	ret	
+4319	4346	45	5	ret	
+4346	4353	13	3	ret	
+4353	435F	12	9	ret	
+435F	436B	12	38	ret	lib_reg_cpy
+436B	4374	9	34	ret	lib_reg_cpy2
+4374	438B	23	2	ret	
+438B	4394	9	10	ret	
+4394	43BA	38	4	jmp	keil_switch_walk
+43BA	43E7	45	1	jmp	
+43E7	449E	183	1	ret	
+449E	4500	98	1	ret	
+4500	4509	9	1	jmp	
+4509	459E	149	2	ret	
+459E	45A2	4	3	fall	
+45A2	46B3	273	7	jmp	
+46B3	4721	110	1	ret	
+4721	478E	109	1	ret	
+478E	47FA	108	1	ret	
+47FA	48B3	185	1	ret	
+48B3	48FE	75	2	ret	
+48FE	4949	75	3	ret	
+4949	4993	74	2	ret	
+4993	49D5	66	1	ret	
+49D5	4A07	50	2	ret	
+4A07	4A32	43	3	ret	
+4A32	4A5B	41	2	ret	
+4A5B	4A7C	33	1	ret	
+4A7C	4A97	27	2	ret	
+4A97	4AB2	27	2	ret	
+4AB2	4ACC	26	2	ret	
+4ACC	4AFC	48	3	ret	
+4AFC	4B10	20	6	ret	
+4B10	4B34	36	1	ret	
+4B34	4B43	15	4	ret	
+4B43	4B4F	12	1	ret	
+4B4F	4B5A	11	1	ret	
+4B5A	4B5B	1	1	ret	
+4B5B	4B5C	1	1	ret	
+4B5C	4B6C	16	1	fall	
+4B6C	4DE0	628	6	reti	
+4DE0	4E56	118	8	ret	
+4E56	4E89	51	1	ret	
+4E89	5188	767	4	fall	
+5188	519D	21	1	ret	
+519D	51C9	44	1	jmpout	
+51C9	520E	69	1	fall	
+520E	5C4E	2624	2	ret	
+5C4E	5C66	24	1	ret	
+5C66	5CC3	93	1	ret	
+5CC3	5D41	126	1	ret	
+5D41	5EE4	419	2	ret	
+5EE4	5FA4	192	1	ret	h2c_handoff
+5FA4	5FC5	33	1	jmpout	
+5FC5	5FFD	56	1	ret	
+5FFD	655F	1378	4	ret	
+655F	6582	35	1	ret	
+6582	680A	648	5	ret	
+680A	6828	30	1	ret	
+6828	6843	27	1	ret	
+6843	6844	1	1	ret	
+6844	6851	13	1	ret	main_callee_1
+6851	685D	12	1	ret	
+685D	6875	24	1	ret	
+6875	688A	21	1	ret	
+688A	6938	174	1	reti	
+6938	6BBD	645	1	ret	
+6BBD	7255	1688	1	ret	
+7255	743B	486	1	ret	main_callee_2
+743B	7835	1018	1	ret	
+7835	7842	13	1	ret	
+7842	7C3D	1019	1	ret	main_callee_3
+7C3D	7C41	4	1	ret	
+7C41	7C4A	9	1	ret	
+7C4A	7C50	6	1	fall	
+7C50	7D23	211	2	jmpout	
+7D23	7D42	31	1	ret	
+7D42	7DC1	127	4	ret	
+7DC1	7E2B	106	6	ret	
+7E2B	7E9A	111	1	ret	
+7E9A	7EDE	68	3	jmp	

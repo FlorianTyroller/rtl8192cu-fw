@@ -21,14 +21,19 @@ annotations and code (see [Legal](#legal)).
 - Three variants (A, B, TMSC) were built in three consecutive minutes on
   5 Dec 2012, 17:10–17:12.
 - 8051, Keil C51 runtime; code RAM at 0x4000–0x7FFF, boot ROM at
-  0x0000–0x3FFF (called into, not readable), MAC registers in XDATA
-  0x0000–0x0FFF, fw globals at XDATA 0x8Axx.
-- `main()` at 0x50C6; H2C command poller at 0x5560 polling register 0x01CC,
-  dispatching through a per-state allowed-command bitmask.
+  0x0000–0x3FFF (owns the real interrupt vectors and calls into the image),
+  MAC registers in XDATA 0x0000–0x0FFF, fw globals at XDATA 0x8Axx.
+- `main()` at 0x50C6; H2C command poller at 0x5560 polling register 0x01CC;
+  dispatch switch at 0x54A6 — every id→handler pair verified against the
+  actual switch table by recursive descent (the first pass had them shifted
+  by one trampoline hop).
+- Full recursive-descent code map: 104 functions, 5 switch tables, every
+  non-code byte accounted for as data.
 
-Full detail: [analysis/findings.md](analysis/findings.md) and the symbol
-database [analysis/annotations.tsv](analysis/annotations.tsv). Tool sources:
-[dis8051.py](tools/dis8051.py) · [fwl.py](tools/fwl.py) ·
+Full detail: [analysis/findings.md](analysis/findings.md), the symbol
+database [analysis/annotations.tsv](analysis/annotations.tsv) and the
+function census [analysis/functions.tsv](analysis/functions.tsv). Tool
+sources: [dis8051.py](tools/dis8051.py) · [fwl.py](tools/fwl.py) ·
 [fetch-firmware.sh](tools/fetch-firmware.sh) (directory browsing is on
 [GitHub](https://github.com/FlorianTyroller/rtl8192cu-fw), not Pages).
 
