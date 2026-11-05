@@ -1,0 +1,35 @@
+# Symbol database: kind	addr	symbol	note
+# kind: code | data | xdata | reg | vec
+# Confirmed = semantics verified against bytes; guess = plausible, unverified
+code	0x4000	vec_reset	reset vector slot 0: LJMP 0x4630 [confirmed]
+code	0x4013	vec_int	vector slot 0x13: LJMP 0x60F2, interrupt handler [confirmed]
+code	0x4630	startup_1	LJMP 0x466E [confirmed]
+code	0x4636	init_copy	loop copying init records to direct/movx targets [confirmed]
+data	0x4666	init_bitmask	01 02 04 08 10 20 40 80, read PC-relative [confirmed]
+code	0x466E	startup_2	MOV DPTR,#0x4B23; enter init-table interpreter [confirmed]
+code	0x4671	init_records_loop	Keil C51 INITTAB interpreter [confirmed]
+data	0x4B23	init_records	C initialization records [confirmed]
+code	0x50C6	main	reached when init records hit terminator [confirmed]
+code	0x435F	lib_reg_cpy	multi-byte register copy (B = count), 38 call sites [confirmed]
+code	0x436B	lib_reg_cpy2	34 call sites, same family [guess]
+code	0x4220	lib_28	28 call sites [guess]
+code	0x4281	lib_14	14 call sites [guess]
+code	0x5560	h2c_poll	H2C poller: REG 0x01CC & 0x0F -> 0x8ACF [confirmed]
+code	0x568A	h2c_poll_2	second poller site [confirmed]
+code	0x5EE4	h2c_handoff	state-machine handoff of command payload [guess]
+code	0x60F2	int_handler	interrupt handler; hang candidate [confirmed addr, role guess]
+code	0x6844	main_callee_1	unexplored
+code	0x7255	main_callee_2	unexplored
+code	0x7842	main_callee_3	unexplored
+# ROM targets (bytes not in our image)
+code	0x29D9	rom_call_1	boot ROM library [confirmed target, unknown content]
+code	0x2A7F	rom_call_2	boot ROM library [confirmed target, unknown content]
+code	0x2FD9	rom_call_3	boot ROM library [confirmed target, unknown content]
+code	0x29F2	rom_call_4	boot ROM library [confirmed target, unknown content]
+# XDATA
+xdata	0x01CC	REG_HMTFR	H2C command mailbox (kernel regs.h) [confirmed]
+xdata	0x01D0	H2C_PAYLOAD	first H2C payload register [confirmed]
+xdata	0x0080	REG_MCU_FW_DL	fw download control (kernel regs.h) [confirmed]
+xdata	0x8ACF	fw_cmd_id	current H2C command id [confirmed]
+xdata	0x8AD0	fw_cmd_payload	H2C payload staging [confirmed]
+xdata	0x8B51	fw_state	state machine state byte [confirmed]

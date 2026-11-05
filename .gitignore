@@ -1,0 +1,10 @@
+# Realtek firmware blobs and derived bulk data never enter git
+blobs/*
+!blobs/.gitkeep
+*.bin
+*.img
+*.dis
+*.tsv.log
+
+# fetched kernel source copies (GPL, but keep the repo lean)
+kernelsrc/
