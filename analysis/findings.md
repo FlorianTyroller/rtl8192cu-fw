@@ -161,7 +161,8 @@ artifact); **recursive descent is the prerequisite for further progress**.
    cluster after the AP's hourly group rekey.
 6. 8051 emulator (SIM): run the image against stubbed registers, replay a
    captured pre-hang usbmon trace — the only debugger this chip will ever
-   give us.
+   give us. (Capture is running on the affected Pi since 2026-11-05:
+   `usbmon-wifi.service`, see doorpi's PI.md — wedges now leave evidence.)
 
 ## Tooling notes
 
