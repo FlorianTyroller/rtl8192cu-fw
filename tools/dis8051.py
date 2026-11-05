@@ -7,10 +7,25 @@ Usage:
 """
 import argparse
 import collections
+import re
 import sys
 
 FSIZE = {'i8': 1, 'i16': 2, 'bit': 1, 'dir': 1, 'rel': 1, 'a11': 1, 'a16': 2}
 T = {}
+REGS = {}  # value -> [names], loaded from kernel headers via --regs
+
+
+def load_regs(paths):
+    rx = re.compile(r'^#define\s+(REG_\w+)\s+0x([0-9A-Fa-f]{3,4})\b')
+    for p in paths.split(','):
+        try:
+            with open(p) as f:
+                for line in f:
+                    m = rx.match(line.strip())
+                    if m:
+                        REGS.setdefault(int(m.group(2), 16), []).append(m.group(1))
+        except OSError as e:
+            print(f'warning: cannot read {p}: {e}', file=sys.stderr)
 
 
 def _t(op, mne, fields=()):
@@ -146,6 +161,11 @@ def decode(img, addr, base):
         text = mne.replace('{a11}', f'{target:04X}')
     if op == 0x85:                              # MOV direct,direct: bytes src,dst
         text = f'MOV {sfr(raw[2])}, {sfr(raw[1])}'
+    if op == 0x90 and REGS:                     # MOV DPTR,#imm16 -> annotate
+        val = vals[0]
+        names = REGS.get(val)
+        if names:
+            text += '   ; ' + '|'.join(names[:3])
     return Insn(addr, raw, text, length, target, is_call)
 
 
@@ -154,8 +174,11 @@ def main():
     ap.add_argument('img')
     ap.add_argument('--base', type=lambda x: int(x, 0), default=0x4000)
     ap.add_argument('--out')
+    ap.add_argument('--regs', help='comma-separated kernel headers with #define REG_* 0xVAL')
     ap.add_argument('--stats-only', action='store_true')
     args = ap.parse_args()
+    if args.regs:
+        load_regs(args.regs)
     with open(args.img, 'rb') as f:
         img = f.read()
     n = len(img)

@@ -37,9 +37,22 @@ xdata	0x01C6	fw_ack_reg	fw sets bit 1 after processing a box [confirmed role, na
 xdata	0x01C0	REG_MCUTST_1	host-side box-read check (kernel reg.h) [confirmed]
 xdata	0x0080	REG_MCU_FW_DL	fw download control (kernel regs.h) [confirmed]
 xdata	0x8ACF	fw_mail_pending	mailbox pending mask copy [confirmed]
-xdata	0x8AD0	fw_cmd_id	current H2C command id [confirmed]
-xdata	0x8AD1	fw_cmd_payload	H2C arg bytes staging [confirmed]
+xdata	0x8AD0	fw_cmd_flags	flags/length companion of the id [uncertain]
+xdata	0x8AD1	fw_cmd_id	current H2C command id (switch value; CORRECTED 2026-11-05, was 8AD0) [confirmed]
+xdata	0x8AD2	fw_cmd_args	H2C arg bytes staging (arg0 via ROM 0x29D9) [confirmed]
 xdata	0x8B51	fw_state	state machine state, ring of 4 (& 3) [confirmed]
+# handler-internal globals seen in first pass
+xdata	0x8B10	fw_rsvdpage_loc	RSVDPAGE stores page locs here (cmd 3) [confirmed]
+xdata	0x8B12	fw_ra_mask	RA_MASK mirror, also written to reg 0x01E7 (cmd 6) [confirmed]
+xdata	0x8B15	fw_rssi_related	RSSI_REPORT state (cmd 5) [guess]
+data	0x8923	mac_mode_table	32-entry table indexed by MAC_MODE_SEL arg0 (cmd 9) [confirmed]
+data	0x4112	seq_lut	lookup table indexed by mailbox seq (0x6C cluster) [guess]
+data	0x40DA	seq_lut_a	lookup tables used by 0x6C cluster [guess]
+data	0x40F6	seq_lut_b	lookup tables used by 0x6C cluster [guess]
+# ROM + library helpers identified by usage
+code	0x29D9	rom_get_arg0	boot ROM: returns current H2C arg byte 0 in A [behavior confirmed]
+code	0x4220	lib_reg_read	single MAC register read (28 xrefs) [confirmed]
+code	0x6C30	h2c_mbox_sequencing	per-mailbox bookkeeping/seq checks [guess]
 # H2C dispatch (switch table at 0x54B0, entries {target_hi, target_lo, case},
 # 00 00 terminator + default 0x54DE; names from rtlwifi enum rtl8192c_h2c_cmd)
 code	0x4394	keil_switch_walk	3-byte-entry switch table walker [confirmed]

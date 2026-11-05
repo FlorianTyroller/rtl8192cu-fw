@@ -112,16 +112,54 @@ KEEP_ALIVE_CTRL (48) are *not* in this table — they must route through a
 second dispatch (open: the pre-dispatch call at 0x5EE4, or one of the other
 switch walkers at 0x43BA, 0x4DD9, 0x6532, 0x6933).
 
+### Handler semantics, first pass (register names via kernel headers)
+
+- default (0x7485): parks arg0 in IRAM 0x21 and returns — **unknown
+  commands are silently ignored**.
+- JOINBSSRPT (0x748B): ROM call into 0x2A8B, then reads SYS clock reg;
+  substantial state setup.
+- RSVDPAGE (0x74B8): gated on SYS_FUNC bit 0; stores page locations at
+  0x8B10/0x8B11.
+- RSSI_REPORT (0x7500): arg0 bit 0 = enable; arg0>>1 stored at 0x8B15.
+- RA_MASK (0x7539): arg0 mirrored at 0x8B12 and written to MAC register
+  0x01E7.
+- MAC_MODE_SEL (0x740F): arg0 (< 0x20) indexes a 32-entry table at 0x8923.
+- cmd 0x20 (0x56A6): branches on chip-version bits of register 0x0004
+  (SYS_CFG family) — hardware-variant-dependent behavior.
+- ROM helper 0x29D9: "fetch arg byte 0" — handlers call it first; the boot
+  ROM is deeply woven into H2C processing.
+
+Correction from the first pass: the dispatch switch value is staged at
+**0x8AD1** (not 0x8AD0 — `MOV R7,[0x8AD1]` feeds the dispatch call at
+0x565D). Annotations fixed accordingly.
+
+### Second dispatch: status
+
+The only caller of the second table walker (0x43BA, 16-bit cases, 4-byte
+entries {target_hi, target_lo, case_hi, case_lo}) is at 0x4FFF with its
+table at 0x5002 — but that region reads/writes REG_TXPAUSE and REG_FMTHR
+(0x01C8, the fw-to-MAC mailbox), i.e. it is TX/queue management, not H2C.
+Where SETPWRMODE etc. actually land remains open. The linear sweep desyncs
+across inline data tables in exactly the candidate regions (0x6C30 cluster
+reads 0x8AD0/0x8AD1 repeatedly — per-mailbox sequencing, or a desync
+artifact); **recursive descent is the prerequisite for further progress**.
+
 ## Open leads
 
-1. Second H2C dispatch: where do cmds 0/1/7/15/24/48 land? Check 0x5EE4 and
-   the remaining switch walkers.
-2. Name the six Linux-unknown commands by reading their handlers
-   (0x56A6, 0x759A, 0x541E, 0x7881, 0x7AC2, 0x7C2B).
-3. 0x60F2 interrupt handler: RX/USB path, deadlock candidates.
-4. Group-key/rekey path: correlate with the field observation that outages
+1. **Recursive descent in tools/dis8051.py** — the prerequisite: linear
+   sweep desyncs on inline tables (bit-mask table 0x4666, 0x5002 table
+   region, 0x6C30 cluster). Roots: 0x4000 vectors, 0x50C6 main, all FUNC_
+   xref targets; unreachable bytes become data. Also: function census
+   (size/xrefs) into analysis/functions.tsv.
+2. Second H2C dispatch: where do cmds 0/1/7/15/24/48 land? Re-examine
+   0x5EE4 and the 0x6C30 cluster after recursive descent.
+3. Name the six Linux-unknown commands by reading their handlers
+   (0x56A6, 0x759A, 0x541E, 0x7881, 0x7AC2, 0x7C2B) with register
+   annotations.
+4. 0x60F2 interrupt handler: RX/USB path, deadlock candidates.
+5. Group-key/rekey path: correlate with the field observation that outages
    cluster after the AP's hourly group rekey.
-5. 8051 emulator (SIM): run the image against stubbed registers, replay a
+6. 8051 emulator (SIM): run the image against stubbed registers, replay a
    captured pre-hang usbmon trace — the only debugger this chip will ever
    give us.
 
