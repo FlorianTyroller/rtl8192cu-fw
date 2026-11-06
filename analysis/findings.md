@@ -396,6 +396,32 @@ A=0), reset-path execution depends on ROM-initialized state we cannot
 reproduce. Next: scripted FWISR injection, stateful ROM stubs, then
 replay of the doorpi usbmon capture.
 
+## Variant validation (2026-11-06 (4))
+
+The full toolchain (descent + walker parsing + seed audit) runs clean on
+all three firmware builds:
+
+| variant | size | instructions | functions | tables | data-gap bytes |
+|---------|------|--------------|-----------|--------|----------------|
+| TMSC (analyzed) | 16094 | 8650 | 104 | 5 | 566 |
+| A | 16094 | 8650 | 104 | 5 | 566 |
+| B | 16064 | 8640 | 102 | 5 | 565 |
+
+A differs from TMSC in 211 bytes (A-cut config; identical layout). B is
+30 B smaller with a slightly shifted layout and needs its own seed list
+(14 seeds, in the canonical command note below); every remaining gap in
+all three variants is legitimate data (vector padding, bit-mask table,
+init records, tail).
+
+Cross-variant architecture fact: the ROM-ABI entry points 0x4860,
+0x4AE4 and 0x4B87 sit at **identical addresses in TMSC/A and B** — the
+boot ROM calls into the image at fixed, build-stable addresses. The
+Keil walker bodies (0x4394/0x43BA) and the library cluster are also
+position-stable; only the 0x4Fxx-0x7E application layer shifted.
+
+B canonical seeds: 0x43BA 0x4503 0x4506 0x4860 0x4AE4 0x4B87 0x4FDE
+0x5062 0x506F 0x523C 0x604E 0x675B 0x7DA7 0x7DB4.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
