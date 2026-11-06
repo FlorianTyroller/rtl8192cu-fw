@@ -191,6 +191,42 @@ tables auto-parsed from the walker idiom (45 + 6 cases).
         --seed 0x4FFC --seed 0x51C9 --seed 0x67EA --seed 0x6891 \
         --seed 0x7D2C --seed 0x7D39 --seed 0x7E2B
 
+## H2C parameter staging — resolved (2026-11-06)
+
+The full path of a command, now traced end-to-end (0x5559 service body):
+
+1. `[0x8ACF] = REG_HMETFR & 0x0F` (pending boxes); the box to read is
+   selected by the state ring: box regs are addressed as `0x01D0 + 4*state`
+   — 0x435F is **not** a copy helper but `DPTR += A*B` (MUL AB then add),
+   a scaled-index helper used everywhere for `base + state*stride`.
+2. Box byte 0 (id, H2C_EXT bit included) → `0x8AD0`; then 0x5EE4 — a Keil
+   generic-pointer memcpy (src/dest ptrs parked at 0x8B3F/0x8B42, byte
+   loop via 0x4374 ptr-increment + ROM 0x29D9 read + 0x424D write) —
+   copies it to `0x8AD1`. (0x29D9's use *inside* this loop proves it is a
+   pointer deref, not a literal fetch.)
+3. Dispatch id = `[0x8AD1] & 0x7F`; bit 7 (H2C_EXT) is extracted at
+   0x55BB by SWAP + 3×RRC + AND 1 and selects the staging mode:
+   - basic: `param[0..2] = box bytes 1..3` → 0x8AD2..0x8AD4
+   - extended: `param[0] = EXT[0x0088+2*state]`, `param[1] =
+     EXT[0x0089+2*state]`, `param[2..4] = box bytes 1..3` → 0x8AD2..0x8AD6
+4. 0x54A6 stores the constant pointer {1, 0x8A, 0xD2} (XDATA:0x8AD2) at
+   0x8AD7 via 0x438B — that stored pointer is what every trampoline reads
+   back with 0x436B. **The handler ABI is just `&staging[0]`.**
+
+The EXT layout — two bytes per box at 0x0088+2*box — matches rtlwifi's
+reg.h `REG_HMEBOX_EXT_0..3 = 0x0088/0x008A/0x008C/0x008E` exactly
+(rtl8xxxu's regs.h naming, one byte per box, is the imprecise one).
+rtlwifi's 6-byte RA_MASK (`6 | H2C_EXT`, 4 mask bytes split
+box1..box3 + EXT) therefore arrives as param {mask[3], ext1, mask[0],
+mask[1], mask[2]} — which is why the RA_MASK handler reloads multiple
+pointer slots (0x8ADC/0x8ADE) to reassemble the 32-bit mask.
+
+Loose end worth a look: 0x6CE5 (inside the 0x6BBD function) indexes a
+**CODE table at 0x41BA by the command id** (MOVC) and compares it against
+the 16-bit value at [0x8AD6:0x8AD7]. 0x41BA sits inside the zero padding,
+so every threshold is 0 in this build — a per-command limit table compiled
+to nothing here (or reserved for other SKUs).
+
 ## H2C handler ABI and the six Linux-unknown commands (2026-11-05 (3))
 
 Lead #3 executed. The headline is the **argument ABI**, which re-frames all
@@ -207,12 +243,11 @@ staging 0x8AD7. Field access:
   proving multiple staged pointers, not one)
 
 So H2C box bytes 1–3 = {space, addr_hi, addr_lo} of a parameter block
-inside the chip. Whether the block comes from the raw mailbox args or from
-the fw's own per-command defaults (the 0x6C30 cluster restages bytes from
-an XDATA table at 0x88xx into 0x8AD6+) is **open** — it decides how
-rtlwifi's literal byte arguments survive this ABI. Reads below are stated
-as param[N] where they go through 0x4220/0x29D9, and as REG[…] only where
-the MOVX is direct.
+inside the chip. ~~Whether the block comes from the raw mailbox args or
+from the fw's own per-command defaults … is open~~ — **RESOLVED
+2026-11-06**, see next section: the pointer always targets the fw's own
+staging at 0x8AD2, which the service fills with the raw mailbox bytes.
+rtlwifi's literal arguments work exactly as the driver intends.
 
 ### The six Linux-unknown commands, read
 
@@ -253,13 +288,13 @@ MOVX ones (TDECTRL 0x0209, DRIVER_EARLY_INT 0x0558, 0x01E7).
 2. ~~Second H2C dispatch~~ **closed**: no second dispatch. cmds 0/15/24/48
    → default (ack-and-ignore); cmd 7 ignored silently. Residual: read the
    real RSVDPAGE handler (0x7552) — the first pass never actually did.
-3. ~~Name the six Linux-unknown commands~~ **done 2026-11-05 (3)** — see the
-   handler table above. Residuals: cmd 44's functional name (checksum
-   offload?), cmd 75's purpose, and the **param-block source question**:
-   does 0x8AD7+ hold raw mailbox args or fw-internal defaults fetched by
-   the 0x6C30 restaging from the 0x88xx table? Decides whether/how
-   rtlwifi's literal arguments actually reach these handlers — read
-   0x6C30's caller chain and the service routine's staging in full.
+3. ~~Name the six Linux-unknown commands~~ **done 2026-11-05 (3)**, and the
+   param-block source residual **resolved 2026-11-06** (see "H2C parameter
+   staging"): the handler pointer is always `&0x8AD2`, filled with raw
+   mailbox bytes — rtlwifi's literal arguments are fully compatible, and
+   the EXT layout matches the driver's exactly. Remaining soft spots: cmd
+   44's functional name (checksum offload?), cmd 75's purpose, and the
+   all-zero per-id limit table at 0x41BA.
 4. Interrupt architecture: 0x60F2 dispatch + ROM-entered 0x4B87 / 0x688A /
    the RETI stubs (0x4DD9, 0x6532, 0x6933 — those are POP/RETI epilogues,
    not switch walkers as first guessed). Which interrupt sources exist,
