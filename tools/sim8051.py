@@ -351,15 +351,11 @@ class Sim:
         elif op == 0xE0:
             self.setA(self.xdata[self.dptr])
         elif op == 0xF0:
-            a = self.dptr
-            self.xdata[a] = A()
-            self.note_xwrite(a, A())
+            self.xwrite(self.dptr, A())
         elif op in (0xE2, 0xE3):
             self.setA(self.xdata[self.bank(op & 1)])
         elif op in (0xF2, 0xF3):
-            a = self.bank(op & 1)
-            self.xdata[a] = A()
-            self.note_xwrite(a, A())
+            self.xwrite(self.bank(op & 1), A())
         elif op == 0xE4:
             self.setA(0)
         elif op == 0xF4:
@@ -581,9 +577,18 @@ class Sim:
         self.set_flag(0x04, ov)
         self.set_acc(r)
 
+    W1C = {0x01CC, 0x0134, 0x0135, 0x0136, 0x0137}   # HMETFR + FWISR bytes
+
+    def xwrite(self, a, v):
+        """XDATA write with hardware semantics (W1C regs)."""
+        if a in self.W1C:
+            v = self.xdata[a] & ~v & 0xFF
+        self.xdata[a] = v & 0xFF
+        if a < 0x1000 and len(self.reg_writes) < 8192:
+            self.reg_writes.append((self.steps, a, self.xdata[a]))
+
     def note_xwrite(self, a, v):
-        if a < 0x1000 and len(self.reg_writes) < 4096:
-            self.reg_writes.append((self.steps, a, v))
+        self.xwrite(a, v)
 
     def chk_halt(self, t):
         if t in HALT_SLOTS:
@@ -614,6 +619,7 @@ def main():
     ap.add_argument('--trace', action='store_true')
     ap.add_argument('--h2c', help='prefill box 0 with id:b1:b2:b3 (hex)')
     ap.add_argument('--ext', help='prefill EXT regs 0x0088/0x0089 with b0:b1 (hex)')
+    ap.add_argument('--script', help='H2C/FWISR replay script (see findings.md)')
     ap.add_argument('--fwisr', help='inject interrupt: hex byte(s) for FWISR '
                     '0x0134.. (e.g. 20 = FWISR0.b5 clock-off); enters via '
                     'vector 0x60F2 with a synthetic interrupted-PC frame')
@@ -629,29 +635,53 @@ def main():
     sim.push(0xDE)
     sim.push(0x7E)                           # 0x7EDE = just past image end
     sim.pc = args.entry
-    if args.fwisr:
-        b = [int(x, 16) for x in args.fwisr.split(':')]
-        for i, v in enumerate(b[:4]):
-            sim.xdata[0x0134 + i] = v
-        # hardware-style interrupt entry: fw enable masks IDATA 0x28-0x2B
-        # default-open in the sim so injected bits reach the dispatcher
-        sim.idata[0x28:0x2C] = b'\xff' * 4
-        sim.xdata[0x01CF] = b[0]             # 0x01CF mirrors FWISR0 for handlers
-        sim.sfr[0xA8 - 0x80] = 0x80          # IE.7 = EA on
-        sim.pc = 0x60F2                      # vector slot 0x4013 target
-
-    if args.h2c:
-        b = [int(x, 16) for x in args.h2c.split(':')]
-        for i, v in enumerate(b[:4]):
-            sim.xdata[0x01D0 + i] = v
-        if args.ext:
-            e = [int(x, 16) for x in args.ext.split(':')]
-            sim.xdata[0x0088] = e[0]
-            sim.xdata[0x0089] = e[1]
-        sim.xdata[0x01CC] = 0x01             # box 0 pending
-        sim.xdata[0x8B51] = 0x00             # state ring at box 0
-        print(f'H2C box0 = id {b[0]:02X} args {b[1]:4X}'.replace(' ', ''))
-        print(f'  bytes: ' + ' '.join(f'{v:02X}' for v in b[:4]))
+    if args.script:
+        for line in open(args.script):
+            line = line.split('#')[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            n0 = len(sim.reg_writes)
+            if parts[0] == 'ext':                      # ext ADDR BYTES
+                a = int(parts[1], 16)
+                b = bytes.fromhex(parts[2])
+                for i, v in enumerate(b):
+                    sim.xdata[a + i] = v
+                print(f'[ext  ] 0x{a:04X} <= {parts[2]}')
+                continue
+            if parts[0] == 'state':
+                print(f'[state] 01C6={sim.xdata[0x01C6]:02X} 01CC={sim.xdata[0x01CC]:02X} '
+                      f'01C0-3={sim.xdata[0x01C0:0x01C4].hex()} 8B51={sim.xdata[0x8B51]:02X} '
+                      f'IDATA21/22={sim.idata[0x21]:02X}/{sim.idata[0x22]:02X}')
+                continue
+            if parts[0] == 'box':                      # box N id b1 b2 b3
+                n = int(parts[1])
+                b = bytes.fromhex(parts[2])
+                for i, v in enumerate(b[:4]):
+                    sim.xdata[0x01D0 + 4 * n + i] = v
+                sim.xdata[0x01CC] |= 1 << n            # hardware sets pending
+                entry, tag = 0x5559, f'box {n} {parts[2]}'
+            elif parts[0] == 'fwisr':                  # fwisr b3:b2:b1:b0
+                bb = bytes.fromhex(parts[1].replace(':', ''))
+                for i in range(4):
+                    sim.xdata[0x0134 + i] = bb[i] if i < len(bb) else 0
+                sim.idata[0x28:0x2C] = b'\xff' * 4
+                sim.xdata[0x01CF] = bb[3] if len(bb) > 3 else 0
+                sim.sfr[0xA8 - 0x80] = 0x80
+                entry, tag = 0x60F2, f'fwisr {parts[1]}'
+            else:
+                print(f'[?    ] {line}')
+                continue
+            sim.halted = None
+            sim.set_sp(0x40)
+            sim.push(0xDE); sim.push(0x7E)             # sentinel frame
+            sim.pc = entry
+            sim.run(200000)
+            w = sim.reg_writes[n0:]
+            print(f'[{tag[:14]:14s}] {sim.steps:7d} steps  halt={sim.halted}  '
+                  f'regwrites={len(w)}: ' + ' '.join(
+                      f'{a:04X}<={v:02X}' for _, a, v in w[:14]))
+        return
 
     h = sim.run(args.steps, trace=args.trace)
     print(f'ran {sim.steps} steps, halted: {h}')

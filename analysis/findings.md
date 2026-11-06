@@ -475,6 +475,42 @@ flag block); (3) an RX-aggregation/filter state left inconsistent by the
 transition (FWISR0.b0/b1 latch path). The emulator (sim8051.py) can now
 replay this exact H2C sequence against the image — next step.
 
+## Roam burst replayed in the emulator (2026-11-06 (6))
+
+sim8051.py now has `--script` replay: `box N bytes` (hardware sets the
+HMETFR bit on box writes — verified against the trace: zero host writes
+to 0x01CC exist), `ext ADDR bytes`, `fwisr b3:b2:b1:b0`, `state`. W1C
+semantics modeled for 0x01CC and FWISR 0x0134–0x0137 (fw writes clear
+bits). Two protocol facts closed on the way: the driver picks the box
+the state ring will service next (trace box order 3,0,1,2,3 = ring
+order), and the kernel's 8051-reset handshake writes bit 5 to 0x01CF —
+exactly the bit the FWISR0.b5 clock-off handler double-checks (the
+reset path and the clock-off handler are two ends of one protocol).
+Also: MCUTST_1+N (0x01C0+N) is a per-box status byte; cmd 44's poll of
+0x01C3 is a wait on box 3's status.
+
+First divergence results (roam script = tonight's exact burst,
+ring-aligned; clean script = single JOINBSSRPT(1) + RA_MASK as control):
+
+- Same RA_MASK|EXT command, wildly different paths: **~1700 steps in
+  roam context vs ~346 in clean context**.
+- **Roam-only write: REG_INIDATA_RATE_SEL (0x0484) = 0x13** — the
+  initial data-rate selection gets reprogrammed only in the roam
+  sequence. Directly consistent with the field wedge's rate-dependent
+  RX behavior (basic-rate frames pass, data doesn't).
+- Ack behavior diverges too: the clean run ends with box 2's pending
+  bit never W1C-cleared (the service exited via the path that skips the
+  0x01CC ack) — worth instrumenting before trusting it as fw behavior
+  vs emulation artifact.
+- JOINBSSRPT parks opmode in IDATA 0x21 (= 1 after opmode=1) ✓ as
+  mapped.
+
+Next: instrument the 0x56A6 RA_MASK handler's branch path in both
+contexts (which of the 1700 vs 346 steps differ, where 0x0484 comes
+from, which exit the ack takes), and add FWISR2.b3/b0 interleaves
+between the roam commands to model the beacon/timer events that fire
+during a real roam.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
