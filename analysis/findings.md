@@ -768,6 +768,53 @@ reads in the covered window, **zero stuck** (all returned 0x00), RSSI
 cycle continuous, and the captured transition uses the same benign
 burst (JOINBSSRPT(1) + RA_MASK|EXT ×2).
 
+## Documentation release: the complete map (2026-11-06 (19))
+
+All five completion points done. The fw is now documented at function
+level across the entire image:
+
+- **Interrupt sources, all named** (7 active per FWIMR init
+  {0x33,0x00,0x07,0x00}): FWISR0.b0 = TX-report-ready (SFR latch
+  pop → per-macid stats), b1 = C2H/event-ready, b4 = H2C-mailbox-
+  arrival, b5 = clock-off request (fatal path → 0x62F1 spin);
+  FWISR2.b0 = beacon-DMA, b1 = beacon-loss/watchdog. Vector page:
+  0x4000 reset, 0x4013 FWISR, 0x4043 hw-event ack/mask, 0x404B
+  timer-int block.
+- **TX power/queue state engine** (0x6582, on [0x8B2D]): 7 states ×
+  12 transition primitives, driven by beacon-loss policy, timer-int,
+  beacon-DMA, and P2P/NoA. The unpause from quiesced states is
+  **power-vetoed** by the SPS0 settle poll — a legitimate fw path that
+  leaves TXPAUSE=0xFF, the exact shape of the emulator's stuck-state
+  repro.
+- **Power-save engine** (0x43E7–0x521D): mode-nibble controller
+  (LPS/quiesced/awake), beacon-miss accounting with per-miss early-int
+  growth, PS timer family (0x50–0x5F blocks), CPWM handshake, PS RX
+  windows, C2H ready events (codes 4/8 at 0x01B8).
+- **Rate adaptation, both halves**: the main-loop RA worker (0x6BBD,
+  32 slots, fallback chains from CODE 0x4050, retry thresholds by rate
+  class) and the TX-report-driven writers (retry-throttle hysteresis,
+  target-rate setting, step-down). RA_MASK decoded fully: 32-bit mask
+  + mode nibble (bits 28–31: B/G=0x0FF5, A=0x0FF0, B=0x000D, HT
+  variants, host-custom via ARFR) + macid. Rate metric = 1.5×
+  CODE[0x4166] (0.5-Mbps units for OFDM).
+- **Host↔fw channels complete**: H2C (mailbox+EXT+staging+dispatch+all
+  15 handlers), C2H (0x01A0 event regs, demux 0x5F33, CLEAR 0x01AF,
+  consumed toggle 0x01CB, ready events 0x01B8), ack register 0x01C6
+  (bits 0/1/3/4/6), diagnostics 0x01C4 (heartbeat 0x50C6/67 = main
+  loop alive; dispatcher 0x60F2/0x60F3; handlers 0x4B87/0x4B88/
+  0x6891/0x5FC5), and the reset handshake (FWIMR=0x20 → 0x01CF bit5 →
+  clock-off → CPU_ENABLE clears).
+- **ROM interface**: 17 targets / 96 calls with the queue-op ABI
+  reconstructed (27DE query / 2A7F store / 4353 load / 2FD9 execute /
+  2A8B exec-imm / 3481 commit) and confidence-tagged names for the
+  rest.
+- **Variants**: A ≈ TMSC (211-byte diff), B mapped in
+  annotations-b.tsv (library block address-identical).
+
+Unresolved by nature (recorded, not fixable statically): ROM internal
+semantics, CCK/HT units of the rate-metric table, the 0x5D41 mask-base
++4 skew, MSR nibble meanings in the beacon-DMA watchdog.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.

@@ -21,14 +21,26 @@ annotations and code (see [Legal](#legal)).
 - Three variants (A, B, TMSC) were built in three consecutive minutes on
   5 Dec 2012, 17:10–17:12.
 - 8051, Keil C51 runtime; code RAM at 0x4000–0x7FFF, boot ROM at
-  0x0000–0x3FFF (owns the real interrupt vectors and calls into the image),
-  MAC registers in XDATA 0x0000–0x0FFF, fw globals at XDATA 0x8Axx.
-- `main()` at 0x50C6; H2C command poller at 0x5560 polling register 0x01CC;
-  dispatch switch at 0x54A6 — every id→handler pair verified against the
-  actual switch table by recursive descent (the first pass had them shifted
-  by one trampoline hop).
+  0x0000–0x3FFF (owns the real interrupt vectors and calls into the
+  image), MAC registers in XDATA 0x0000–0x0FFF, fw RAM at 0x8xxx.
 - Full recursive-descent code map: 104 functions, 5 switch tables, every
-  non-code byte accounted for as data.
+  non-code byte accounted for (the 0x4050–0x41D5 "gap" holds the RA data
+  tables — read via register-computed MOVC, invisible to static descent).
+- Every host↔fw channel documented: H2C (mailbox + EXT + staging +
+  dispatch + all 15 handlers, both Linux-known and Windows-only), C2H
+  event channel (0x01A0/0x01AF/0x01B8/0x01CB), the ack register 0x01C6
+  (5 known bits), the reset handshake (FWIMR→0x01CF→clock-off), and the
+  diagnostic indicator 0x01C4 (main-loop heartbeat, per-handler stamps).
+- Interrupt architecture complete: 7 active FWISR sources all named,
+  timer-int block per-case, TX power/queue state engine (7 states, 12
+  transitions — incl. the power-vetoed unpause that can legitimately
+  leave TX paused), power-save engine, and the full rate-adaptation
+  engine (32 macid slots, fallback chains, retry thresholds, mode
+  classes).
+- The wedge story: every captured field event explained as
+  environment-side; one lab-reproduced fw failure mode (unpausable TX
+  state) with its real-code veto mechanism identified; emulator
+  (sim8051.py) can replay captured H2C sequences against the image.
 
 Full detail: [analysis/findings.md](analysis/findings.md), the symbol
 database [analysis/annotations.tsv](analysis/annotations.tsv) and the
