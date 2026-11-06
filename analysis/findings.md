@@ -157,11 +157,17 @@ Result on TMSC: 8650 instructions, 15365/16094 bytes code, **0 byte
 conflicts**, 104 functions ([functions.tsv](functions.tsv)), 5 switch
 tables auto-parsed from the walker idiom (45 + 6 cases).
 
-- Every remaining unreached byte range is legitimate data: zero padding
-  0x4003–0x4013 / 0x4016–0x4220, the PC-relative bit-mask table 0x4666,
-  the 17-byte init-records blob at 0x4B23, 3 tail bytes. The first pass's
-  "seq_lut" tables at 0x40DA/0x40F6/0x4112 were artifacts of decoding zero
-  padding — annotations deleted.
+- Remaining unreached byte ranges are data — but **not all padding**
+  (corrected 2026-11-06 (17)): 0x4050–0x41D5 holds the **rate-adaptation
+  tables** (23 fallback chains ×6 B at 0x4050, selector ladders at
+  0x40DA/0x40F6, thresholds 0x4112–0x418C, limits 1–12 at 0x41BA,
+  weights at 0x41D6; 318 non-zero bytes, byte-verified). The first pass's
+  "seq_lut" annotations were directionally RIGHT and are rehabilitated —
+  my "zero padding artifact" claim was itself an artifact (the RA worker
+  reads these via register-computed MOVC, so recursive descent can never
+  reach them). Lesson recorded: **a descent gap is only padding after a
+  byte check**. True padding: 0x4003–0x4013, 0x4016–0x404F, plus the
+  bitmask table 0x4666, init records 0x4B23, 3 tail bytes.
 - **The image's 0x4000/0x4013 LJMP slots are not the whole interrupt
   story.** A 601 B handler with full register-save prologue (0x4B87), a
   174 B RETI-terminated handler (0x688A, alt entry 0x6891) and the 0x4FFC
