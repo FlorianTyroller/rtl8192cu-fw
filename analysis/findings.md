@@ -706,6 +706,32 @@ beacon loss into the timer/flag machinery) is not triggerable from the
 router UI alone (needs the repeater down too); the log-rotation fix on
 doorpi still pending (1 GB log, ~6 days headroom; needs sudo).
 
+## Event taxonomy from the Speedport log (2026-11-06 (13))
+
+The router's log (~/speedportlog.txt, user-exported) maps doorpi's
+associations across the whole wedge history and regrades it:
+
+| event | router-side story | verdict |
+|-------|-------------------|---------|
+| Nov 4 21:06 (dmesg "wedge" 1) | **nothing at all** — no doorpi roam/logout that evening; this was the day of the manual rtl8xxxu switch | manual driver work; the "Disabling MAC timed out" is likely **routine unload noise**, pending confirmation on a clean unload |
+| Nov 5 07:06–07:10 (wedge 2) | doorpi logged off 07:06:19 (no router trigger logged), re-logged-in **to the router** 07:09:33, DHCP renewed 07:09:35 — then watchdog reload 07:10:21 | **the one unresolved event**: associated directly to the gateway with a fresh lease, pings failing ~45 s later. Either the real stick-side data-path wedge, or a second unlogged router beacon blip |
+| Nov 6 01:09–01:26 (wedge 3) | beacon stop (capture-proven) → roam to repeater → repeater backhaul dead | fully explained, router/repeater-side |
+
+Two systematic observations: (1) the Speedport logs nothing for the
+beacon blips that start these chains — unlogged PHY-level hiccups (or
+unlogged background channel scans — the leading environmental theory:
+periodic auto-channel scans pause beaconing; 3 same-SSID mesh APs +
+crowded 2.4 GHz) ; (2) both roam-away events (Nov 5 07:06, Nov 6 01:09)
+had no logged router trigger, so either the router blips ~2×/day or the
+stick's beacon-loss machinery false-fires at 10 cm — still open.
+
+Consequence: the stress series (repeated router restarts) now has a
+sharper target — reproduce the **Nov-5 shape** (re-associate to the
+router, then data path dead) with full instrumentation. And every
+future event gets one more check: if the stick is associated to the
+ROUTER and the gateway is unreachable, that is stick-side until proven
+otherwise (no repeater in the path).
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
