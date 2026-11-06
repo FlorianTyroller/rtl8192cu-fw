@@ -1,0 +1,7 @@
+# Protocol-legal clean association control (ring-consecutive boxes).
+# NOTE: the service is ring-strict - out-of-ring box writes starve.
+state
+box 0 02010000             # JOINBSSRPT opmode=1
+ext 008A ffff
+box 1 860f00a0             # RA_MASK|H2CEXT
+state

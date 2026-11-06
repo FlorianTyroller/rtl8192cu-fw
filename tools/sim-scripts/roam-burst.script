@@ -1,0 +1,13 @@
+# Exact H2C burst from the 2026-11-06 01:09:33 roam event (doorpi capture),
+# ring-aligned for a sim starting at ring state 0.
+# Run: python3 -I tools/sim8051.py IMG --script tools/sim-scripts/roam-burst.script
+state
+box 0 05000049            # RSSI_REPORT 0x49 (last normal cycle value)
+box 1 02000000            # JOINBSSRPT opmode=0 (leaving primary AP)
+ext 008C ffff             # EXT pair for ring state 2
+box 2 860f00a0            # RA_MASK|H2C_EXT {0f,00,a0} + EXT ffff
+box 3 02010000            # JOINBSSRPT opmode=1 (joining new AP)
+box 0 05000022            # RSSI_REPORT 0x22 (halved)
+ext 0088 00f0             # EXT pair for ring state 0
+box 1 860f00a0            # RA_MASK|H2CEXT again
+state

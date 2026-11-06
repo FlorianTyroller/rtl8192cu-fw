@@ -1,0 +1,25 @@
+# Reproduces the TXPAUSE-stuck-0xFF failure mode (findings 2026-11-06 (8)):
+# legal H2C warm-up, two hand-seeded assoc-flag bytes (see findings (10):
+# ROM-mediated, not legally derivable statically), then a timer-event storm
+# via the ROM vector, then the recovery H2C set that CANNOT unpause.
+state
+box 0 05000040             # RSSI
+box 1 2D050001             # cmd 45: beacon-loss threshold 0x8B10=5, gate on
+box 2 02010000             # JOINBSSRPT opmode=1
+box 3 3B010000             # cmd 59: rate ctrl + mode kick (TX unpause path)
+poke 8B32 01               # SEEDED (assoc flag block - ROM-written in real fw)
+poke 8B33 00               # SEEDED
+idpoke 32 ff               # open timer-int byte-2 mask (0x013E)
+poke 013E 02               # hw timer event latch
+poke 0157 01               # hw beacon/timer event reg
+call 4B87                  # ROM vector: timer/flag dispatcher
+poke 013E 02
+poke 0157 01
+call 4B87
+state                      # -> TXPAUSE=FF
+# recovery attempt (observed: cannot unpause; cmd 59 skips its drain)
+box 0 02010000
+ext 008A ffff
+box 1 860f00a0
+box 2 3B010000
+state                      # -> TXPAUSE still FF

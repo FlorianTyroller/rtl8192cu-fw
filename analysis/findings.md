@@ -611,6 +611,53 @@ shows how easily AP noise impersonates a wedge) or a future capture that
 passes the discriminator (link dead + no AP-side journal explanation +
 H2C alive + 0x01C4 readout).
 
+## Plan for the next session (written 2026-11-06, night)
+
+Static + emulation work is exhausted (see (10)); everything below needs
+hardware, the field box, or user actions. In priority order:
+
+1. **Forced-roam experiment** (needs the user present — it bounces the
+   home network). Two variants, both with the usbmon capture running:
+   a. *Roam variant*: associate doorpi to the primary AP
+      (AA:00:00:00:00:01), repeater reachable → power-cycle the PRIMARY
+      → the stick must roam to the repeater. This recreates the 01:09:33
+      scenario WITHOUT the backhaul-death noise. Watch: does the link
+      survive the roam? H2C behavior? TXPAUSE-recoverable?
+   b. *Beacon-loss variant*: make BOTH APs unreachable (kill primary,
+      repeater already out of range or blocked) → pure beacon loss, no
+      roam target → the timer/flag machinery under load (the lab
+      TXPAUSE-stuck path). Watch for: link death with NO AP-side journal
+      story = the discriminator firing for the first time on demand.
+   Log everything; judge against the wedge discriminator (below).
+2. **Wedge discriminator checklist** for every future watchdog trigger
+   (currently manual; automating on doorpi needs sudo):
+   - journalctl -k around onset: roam? "authenticate with <BSSID>"?
+     beacon loss? Check BOTH APs (primary AA:00:00:00:00:01, repeater
+     AA:00:00:00:00:02 — the repeater impersonates wedges).
+   - usbmon: H2C cycle continuing (0x01CC reads = 0x00) while the link
+     is dead → fw-side suspicion.
+   - 0x01C4/0x01C5 readout (0x60F2 stuck-in-dispatcher / 0x60F3 clean /
+     0x4B87 stuck-in-ROM-handler) — needs a MAC-reg read path; rtl8xxxu
+     has none, so this means a tiny helper (ethtool? custom) — stretch
+     goal, needs sudo + user buy-in.
+3. **Driver-side workaround prototype** (needs sudo on doorpi + user
+   OK): after every roam, force the fw's mode-switch to re-run so the
+   TX-drain/unpause executes (cmd 59 twice with different param[0], or
+   a JOINBSSRPT 0→1 cycle) — rebuild via pi/rtl8xxxu-build.sh. This
+   immunizes against the lab-reproduced TXPAUSE-stuck class even if it
+   is never confirmed as the field cause.
+4. **Optional lab fuzzing** (bounded): extend sim80511 with a scripted
+   expected-beacon model and fuzz the timer/flag state space for more
+   unpausable states; the two seeded bytes are the only unverified part
+   of the repro.
+5. Oddity worth a look when convenient: the driver's RSSI H2C cycle
+   stopped at 01:20:38, ~2 min before the repeater died, while the link
+   still worked (rtl8xxxu source read).
+
+Support: replay scripts are in tools/sim-scripts/ (roam-burst,
+txpause-stuck, clean-assoc); wedge traces land in ~/wedge-captures/ on
+this machine (NOT the repo — they embed firmware-download bytes).
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
