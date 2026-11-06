@@ -422,7 +422,7 @@ position-stable; only the 0x4Fxx-0x7E application layer shifted.
 B canonical seeds: 0x43BA 0x4503 0x4506 0x4860 0x4AE4 0x4B87 0x4FDE
 0x5062 0x506F 0x523C 0x604E 0x675B 0x7DA7 0x7DB4.
 
-## First fully-captured wedge, decoded (2026-11-06 (5))
+## "First wedge" capture — RECLASSIFIED as AP-side (corrected 2026-11-06 (9))
 
 The usbmon capture on doorpi caught a complete wedge tonight
 (2026-11-06 01:09–01:26). Trace saved at ~/wedge-captures/
@@ -442,7 +442,33 @@ Anatomy (anchor 0 s = 01:25:54.7, the USB reset):
 | 01:23:14 (−160 s) | auth-retry storms; **RX is flaky, not dead**: 3 auth attempts to primary AP get no reply, but 01:23:27 auth to second AP succeeds (assoc times out), 01:23:46 auth **and** AssocResp both succeed (aid 22). Low-rate frames sometimes get through. |
 | 01:25:53 (0−1.7 s) | watchdog reloads driver; `rtl8xxxu_active_to_emu: Disabling MAC timed out` — the fw never completes the register-level power-down handshake. USB reset, fw reload, recovery on the primary AP. |
 
-Conclusions that change the model:
+**Correction 2026-11-06 (9).** The timeline above was mis-narrated. The
+watchdog's own journal shows the gateway REACHABLE every 90 s from
+01:10:04 through 01:22:34 (12 consecutive checks), and the bulk-in
+stream during the "limbo" carries 7,031 frames >160 B — real data
+traffic. The 01:09:35 traffic drop is the quieter repeater BSS, not
+unicast death. Corrected reading: 01:09:33 legitimate roam (primary
+signal collapse) → working link via the repeater AA:00:00:00:00:02 →
+~01:22:34 the repeater/backhaul dies → auth dance (primary out of
+range; repeater assoc flaky at RSSI 0x1f, assoc OK 01:23:46 but
+backhaul dead) → watchdog reload. **Tonight's outage was AP-side, not a
+firmware wedge.** The H2C path was alive because the fw was healthy.
+The only genuine fw anomaly tonight: the MAC-disable handshake timeout
+during teardown. The emulator TXPAUSE-stuck state (section 8) remains a
+real, discovered latent failure mode — but with **zero field
+confirmation**; the "unicast dead / broadcast flows / 11-min limbo"
+field claims built on this event are withdrawn.
+
+Sharpened discriminator for future captures — a REAL fw wedge means:
+link dead + no AP-side explanation in the journal (no roam, no beacon
+loss to a visibly dying AP) + H2C cycle continuing (0x01CC reads 0x00)
++ preferably 0x01C4/0x01C5 read out. doorpi's environment has TWO APs
+(primary AA:00:00:00:00:01, repeater AA:00:00:00:00:02) — every capture
+must be checked against both before blaming the stick. One open oddity
+from tonight: the driver's RSSI H2C cycle stopped at 01:20:38, ~2 min
+before the repeater died, while the link still worked.
+
+Conclusions that change the model (superseded by the correction above):
 
 - **The wedge is not an 8051 hang.** The H2C/mailbox state machine stayed
   responsive for the entire 16-minute death spiral (0x01CC = 0x00 even at
