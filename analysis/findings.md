@@ -593,6 +593,24 @@ cmd 59 twice with different param[0]s, or a JOINBSSRPT(0)→(1) cycle
 AFTER the flags settle) so the drain/unpause path executes; or
 periodically rewrite TXPAUSE = 0 from the driver when associated.
 
+## Flag-block provenance, and where static work ends (2026-11-06 (10))
+
+Chasing the legal derivation of the TXPAUSE-stuck repro's seeded flags:
+the 0x8B2C–0x8B37 block is *read* and decoded all over the 0x4Bxx–0x4Fxx
+timer/ROM-entry region (e.g. 0x4CFF, 0x4D79, 0x4E00 decode bits 1/2 and
+5–7 into mode decisions), but its **writers are ROM-mediated** — the
+write-helper idiom (ROM 0x27DE/0x2A7F with computed DPTRs, as in the
+0x7C50 tx-drain family) or fw init in the unreadable boot ROM. A fully
+static, fully legal derivation of [0x8B32].0 is therefore **not
+possible**; the emulator repro with two hand-seeded flag bytes is the
+honest endpoint of static + emulation analysis. Upgrading the TXPAUSE
+failure mode from "lab repro" to "confirmed field mechanism" now
+requires hardware evidence: either the forced-roam experiment (designed
+to separate fw-wedge from AP-side noise — tonight's reclassification
+shows how easily AP noise impersonates a wedge) or a future capture that
+passes the discriminator (link dead + no AP-side journal explanation +
+H2C alive + 0x01C4 readout).
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
