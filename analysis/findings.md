@@ -367,6 +367,35 @@ processed, 3 opmode-change, 4 offload-done. The 0x7C4A/0x7C50/0x7D42/0x7D23
 family are TX-drain/power-transition sequences built on ROM helpers
 (0x27DE/0x2A7F/0x2FD9/0x2A8B/0x3481/0x3754) and REG_SPS0_CTRL (0x0011).
 
+## Emulator v1 (2026-11-06 (3)): tools/sim8051.py
+
+The chip has no debugger; now we have one. Full 8051 core, image at
+0x4000, boot-ROM calls trapped and stubbed (0x29D9 emulated as the
+generic-ptr read per the reverse-engineered ABI), MAC-register writes
+logged, halt-slot detection, H2C mailbox injection (`--h2c id:b1:b2:b3
+--ext e0:e1`, entry defaults to the service routine with a sentinel
+return frame).
+
+Validated against the static model — all four tests agree:
+
+| test | result |
+|------|--------|
+| cmd 5 (RSSI) basic | id staged 0x8AD0/0x8AD1, param = {b1,b2,b3}, state ring advanced, HMETFR W1C, clean return |
+| id 0x55 (unknown) | default handler → **0x01C6 bit 0 ack** |
+| cmd 1 (SETPWRMODE) | ROM 0x2A8B + writes 0x0136/0x0137 (FWISR+2/+3), 0x0604, 0x060A, **REG_DRIVER_EARLY_INT 0x0558 = 0** — power-mode setup programs the beacon early-int (new fact) |
+| cmd 6\|EXT (RA_MASK) | param = {EXT0,EXT1,b1,b2,b3} = 44 55 11 22 33 — extended staging confirmed; handler writes reg 0x052C |
+| cmd 7 | zero side effects — "silently ignored" confirmed dynamically |
+
+Also refined dynamically: the 0x01C6 bit-1 "processed" ack is written on
+the service's no-more-work exit path, not per box.
+
+Known limits (v1): no interrupt model (FWISR never fires — main-loop and
+ROM-context paths diverge; enter at the service instead of reset), ROM
+stubs return immediately with plausible values (0x2A7F/0x2FD9 return
+A=0), reset-path execution depends on ROM-initialized state we cannot
+reproduce. Next: scripted FWISR injection, stateful ROM stubs, then
+replay of the doorpi usbmon capture.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
@@ -391,11 +420,10 @@ family are TX-drain/power-transition sequences built on ROM helpers
    0x01C4/0x01C5 on a wedged stick (add to doorpi's capture).
 5. Group-key/rekey path: correlate with the field observation that outages
    cluster after the AP's hourly group rekey.
-6. 8051 emulator (SIM): run the image against stubbed registers, replay a
-   captured pre-hang usbmon trace — the only debugger this chip will ever
-   give us. (Capture is running on the affected Pi since 2026-11-05:
-   `usbmon-wifi.service`, see doorpi's PI.md — wedges now leave evidence.)
-   Descent + census give the emulator a complete code map — unblocked.
+6. 8051 emulator: **v1 works (2026-11-06 (3))** — validated the whole H2C
+   model dynamically (above). Next: interrupt injection, stateful ROM
+   stubs, then replay of the pre-hang usbmon trace from doorpi (capture
+   live since 2026-11-05, see doorpi's PI.md).
 
 ## Tooling notes
 

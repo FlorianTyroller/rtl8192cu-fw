@@ -68,7 +68,7 @@ code	0x54A6	h2c_dispatch	store param ptr {1,0x8A,0xD2} -> 0x8AD7 (via 0x438B), R
 code	0x54B0	h2c_switch_table	14 cases + default, inline after LCALL at 0x54AD [confirmed]
 code	0x54DE	h2c_case_stubs	trampolines 0x54DE-0x5558, one per case [confirmed]
 code	0x565D	h2c_dispatch_call	ACALL 0x54A6 with id in R7 [confirmed]
-code	0x748B	h2c_setpwrmode	cmd 1 SETPWRMODE (Linux sends it; first pass mislabeled as cmd 2) [confirmed]
+code	0x748B	h2c_setpwrmode	cmd 1 SETPWRMODE (Linux sends it; first pass mislabeled as cmd 2); sim-observed: writes FWISR 0x0136/0x0137, 0x0604, 0x060A, REG_DRIVER_EARLY_INT [confirmed]
 code	0x7485	h2c_joinbssrpt	cmd 2 JOINBSSRPT (first pass mislabeled as default) [confirmed]
 code	0x7552	h2c_rsvdpage	cmd 3: page locs 0x8AF7-0x8AFB = TDECTRL[0x0209] page base + param[0..4] [confirmed]
 code	0x740F	h2c_rssi_report	cmd 5 RSSI_REPORT; note: arg access is param[] via ptr ABI [confirmed]
@@ -121,6 +121,7 @@ xdata	0x8B0D	fw_bcn_miss_count	beacon-loss counter; threshold = 0x8B10 (stored b
 xdata	0x05F8	REG_SCH_TX_CMD	scheduler TX command, drained by 0x7E9A (kernel name) [confirmed]
 xdata	0x0011	REG_SPS0_CTRL	pad/power-saving control used by tx_drain family (kernel name) [confirmed]
 data	0x00D1	sfr_hw_latches	custom SFRs 0xD1-0xD7/0xD9: hw interrupt-context latches copied by FWISR0.b0/b1 handlers [confirmed usage]
+xdata	0x052C	ra_mask_reg	reg written by RA_MASK handler (0x56A6) [sim-observed]
 # other switch tables found by descent
 code	0x580F	switch_table_580F	12 cases: 0,1,2,3,4,5,6,0x0C,0x0D,0x0E,0x0F (state-machine?) [ids confirmed, role unknown]
 code	0x6597	switch_table_6597	7 cases 0-6 (ids confirmed, role unknown)
