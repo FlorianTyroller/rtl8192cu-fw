@@ -191,6 +191,60 @@ tables auto-parsed from the walker idiom (45 + 6 cases).
         --seed 0x4FFC --seed 0x51C9 --seed 0x67EA --seed 0x6891 \
         --seed 0x7D2C --seed 0x7D39 --seed 0x7E2B
 
+## H2C handler ABI and the six Linux-unknown commands (2026-11-05 (3))
+
+Lead #3 executed. The headline is the **argument ABI**, which re-frames all
+handler analysis: every trampoline handler receives a Keil C51 *generic
+pointer* in R3:R2:R1 (R3 = space: 0=IDATA, 1=XDATA, 0xFE=PDATA, 0xFF=CODE;
+R2:R1 = address) — the trampoline's `LCALL 0x436B` loads exactly that from
+staging 0x8AD7. Field access:
+
+- ROM 0x29D9 → param byte 0
+- lib 0x4220 with `DPTR=#N` → param byte N (verified: 0x4220 is the Keil
+  generic-ptr deref with DPTR as offset — the earlier "single MAC register
+  read" reading was the special case ptr={1,0,0}; several sites first
+  reload R3:R2:R1 from other pointer slots 0x8ADC/0x8ADE via 0x436B,
+  proving multiple staged pointers, not one)
+
+So H2C box bytes 1–3 = {space, addr_hi, addr_lo} of a parameter block
+inside the chip. Whether the block comes from the raw mailbox args or from
+the fw's own per-command defaults (the 0x6C30 cluster restages bytes from
+an XDATA table at 0x88xx into 0x8AD6+) is **open** — it decides how
+rtlwifi's literal byte arguments survive this ABI. Reads below are stated
+as param[N] where they go through 0x4220/0x29D9, and as REG[…] only where
+the MOVX is direct.
+
+### The six Linux-unknown commands, read
+
+| id | handler | semantics | conf. |
+|----|---------|-----------|-------|
+| 32 | 0x7881 | `[0x8B38] = param[0]`, RET. 0x8B38 has exactly one consumer: 0x6547 computes `param0 + REG_DRIVER_EARLY_INT − 2` → 0x8B3E (beacon early-rx timing). **Beacon early/pass-time offset.** | high |
+| 44 | 0x7AC2 | TX-buffer offload op: computes `[0x8AE0] = TDECTRL[0x0209] + param[0]`, bit 0 selects a mode word at 0x8ADB; 8-iteration 16-bit sum loop over a struct in **XDATA 0xFCxx** (packet-buffer space); stages work block 0x8ADA–0x8AEE, calls the offload state machine **0x7889** (switch on staged type byte: cases 0–5, 0x80–0x82, table at 0x78D9); then polls status reg **0x01C3** against 0xE8/0xEB thresholds with ROM 0x3754 retries; completion acks via **bit 4 of 0x01C6**. Shape says checksum/TCP-offload (Windows NDIS style); functional name unproven. | behavior high, name med |
+| 45 | 0x74B8 | System-config snapshot: if `param[2] & 1` → latch `{param[0]→0x8B10, param[1]→0x8B11, (param[2]>>1)&0x7F→0x8B0F, param[3]→0x8B16}` else defaults {3, 5, 0x14, 5}. Block 0x8B0F–0x8B16 is read all over the power/restore paths (0x44DA, 0x47D7, 0x4B5D inside the ROM-entry handler, …). **Power-state restore-parameter snapshot.** | high |
+| 46 | 0x7500 | If `param[0] & 1`: `[0x8B15] = param[0]>>1`, `REG_DRIVER_EARLY_INT (0x0558) = param[1]`; else `[0x8B15] = 5`, `0x0558 = 3`. **Beacon early-interrupt config** (enable + value, defaults 5/3). | high |
+| 59 | 0x7539 | `[0x8B12] = param[0]`; if nonzero calls mode-switch 0x45A2(0, 4) (compares 4-bit mode vs IDATA 0x22); writes `REG[0x01E7] = param[0]` (fw-private reg). Rate-mask mirror + queue-mode kick; BT-coex rate control is the leading guess. | med |
+| 75 | 0x7C2B | `[0x8B05] = param[0]; [0x8B06] = param[1]`, RET. Consumers: 0x8B05 read at 0x4CDF (startup family), 0x8B06 at 0x6336. Parameter handoff, purpose unproved. | behavior high |
+
+And the residual from lead #2:
+
+- **RSVDPAGE (3, 0x7552)**: `R5 = TDECTRL[0x0209]` (direct read — current
+  TX-DMA page base); stores `R5 + param[N]` for N=0..4 → 0x8AF7–0x8AFB.
+  Five reserved-page locations computed off the live page base. Matches
+  rtlwifi's intent (fw TXes null/ps-poll from those pages during LPS);
+  the 5-vs-3 arg question folds into the open pointer-ABI question above.
+
+New small facts: 0x01C6 ack register actually carries (at least) bit 0 =
+unknown-cmd ack (default handler), bit 1 = processed (h2c_ack_tail),
+bit 4 = cmd-44 offload completion. XDATA 0xFC00–0xFD10 = packet/descriptor
+buffer space the fw reads and writes directly. Reg 0x01C3 = offload status.
+ROM 0x3754 = poll/retry service (called with code 0x0A).
+
+First-pass casualties of the ABI discovery: every earlier "MOV DPTR,#NN;
+LCALL 4220 = read reg NN" interpretation inside H2C handlers is re-labeled
+param[N] (e.g. cmd 45's "SYS_FUNC gate" is really `param[2] & 1`; RA_MASK's
+"SYS_CFG version bits" is param[4]). Reg reads that survive are the direct
+MOVX ones (TDECTRL 0x0209, DRIVER_EARLY_INT 0x0558, 0x01E7).
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
@@ -199,9 +253,13 @@ tables auto-parsed from the walker idiom (45 + 6 cases).
 2. ~~Second H2C dispatch~~ **closed**: no second dispatch. cmds 0/15/24/48
    → default (ack-and-ignore); cmd 7 ignored silently. Residual: read the
    real RSVDPAGE handler (0x7552) — the first pass never actually did.
-3. Name the six Linux-unknown commands by reading their handlers with
-   register annotations — pairing now corrected: 0x7881 (32), 0x7AC2 (44),
-   0x74B8 (45), 0x7500 (46), 0x7539 (59), 0x7C2B (75).
+3. ~~Name the six Linux-unknown commands~~ **done 2026-11-05 (3)** — see the
+   handler table above. Residuals: cmd 44's functional name (checksum
+   offload?), cmd 75's purpose, and the **param-block source question**:
+   does 0x8AD7+ hold raw mailbox args or fw-internal defaults fetched by
+   the 0x6C30 restaging from the 0x88xx table? Decides whether/how
+   rtlwifi's literal arguments actually reach these handlers — read
+   0x6C30's caller chain and the service routine's staging in full.
 4. Interrupt architecture: 0x60F2 dispatch + ROM-entered 0x4B87 / 0x688A /
    the RETI stubs (0x4DD9, 0x6532, 0x6933 — those are POP/RETI epilogues,
    not switch walkers as first guessed). Which interrupt sources exist,
