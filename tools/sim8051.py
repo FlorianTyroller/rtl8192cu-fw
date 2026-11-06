@@ -577,7 +577,8 @@ class Sim:
         self.set_flag(0x04, ov)
         self.set_acc(r)
 
-    W1C = {0x01CC, 0x0134, 0x0135, 0x0136, 0x0137}   # HMETFR + FWISR bytes
+    W1C = {0x01CC, 0x0134, 0x0135, 0x0136, 0x0137,
+           0x013C, 0x013D, 0x013E, 0x013F}   # HMETFR, FWISR, timer-int block
 
     def xwrite(self, a, v):
         """XDATA write with hardware semantics (W1C regs)."""
@@ -642,6 +643,20 @@ def main():
                 continue
             parts = line.split()
             n0 = len(sim.reg_writes)
+            if parts[0] == 'idpoke':                    # idpoke ADDR BYTES
+                a = int(parts[1], 16)
+                b = bytes.fromhex(parts[2])
+                for i, v in enumerate(b):
+                    sim.idata[a + i] = v
+                print(f'[idpok] idata {a:02X} <= {parts[2]}')
+                continue
+            if parts[0] == 'poke':                     # poke ADDR BYTES (hw-side)
+                a = int(parts[1], 16)
+                b = bytes.fromhex(parts[2])
+                for i, v in enumerate(b):
+                    sim.xdata[a + i] = v
+                print(f'[poke ] 0x{a:04X} <= {parts[2]} (hw latch)')
+                continue
             if parts[0] == 'ext':                      # ext ADDR BYTES
                 a = int(parts[1], 16)
                 b = bytes.fromhex(parts[2])
@@ -651,7 +666,9 @@ def main():
                 continue
             if parts[0] == 'state':
                 print(f'[state] 01C6={sim.xdata[0x01C6]:02X} 01CC={sim.xdata[0x01CC]:02X} '
-                      f'01C0-3={sim.xdata[0x01C0:0x01C4].hex()} 8B51={sim.xdata[0x8B51]:02X} '
+                      f'TXPAUSE={sim.xdata[0x0522]:02X} 013C-F={sim.xdata[0x013C:0x0140].hex()} '
+                      f'8B0C/0D/10={sim.xdata[0x8B0C]:02X}/{sim.xdata[0x8B0D]:02X}/{sim.xdata[0x8B10]:02X} '
+                      f'8B2C-37={sim.xdata[0x8B2C:0x8B38].hex()} 8B51={sim.xdata[0x8B51]:02X} '
                       f'IDATA21/22={sim.idata[0x21]:02X}/{sim.idata[0x22]:02X}')
                 continue
             if parts[0] == 'box':                      # box N id b1 b2 b3
@@ -661,6 +678,8 @@ def main():
                     sim.xdata[0x01D0 + 4 * n + i] = v
                 sim.xdata[0x01CC] |= 1 << n            # hardware sets pending
                 entry, tag = 0x5559, f'box {n} {parts[2]}'
+            elif parts[0] == 'call':                    # call ADDR (raw entry)
+                entry, tag = int(parts[1], 16), f'call {parts[1]}'
             elif parts[0] == 'fwisr':                  # fwisr b3:b2:b1:b0
                 bb = bytes.fromhex(parts[1].replace(':', ''))
                 for i in range(4):

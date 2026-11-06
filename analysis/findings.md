@@ -528,6 +528,45 @@ and watch TXPAUSE and the 0x7E2B beacon-loss path for opmode-dependent
 misprogramming; in parallel, the field discriminator (roam bursts in
 the journal before wedge onset) keeps running on doorpi.
 
+## Wedge mechanism candidate reproduced (2026-11-06 (8))
+
+With seeded-but-plausible state (assoc flag [0x8B32].0 = 1, [0x8B33] ≠ 3,
+beacon-loss threshold 0x8B10 = 5 via a real cmd-45, opmode = 1 via real
+JOINBSSRPTs, mode nibble IDATA 0x22 = 4 via real cmd 59), a storm of
+timer events (hw latch 0x013E bit 1 + event reg 0x0157, handler entered
+at the ROM vector 0x4B87) drives the firmware into a **TX-paused state
+it cannot leave**:
+
+- The 0x4B87 timer case (dispatched via 0x013C-block bits, masked by
+  IDATA 0x30–0x33; case 0x013E.b1 at 0x4D70) runs the deep path:
+  W1C 0x013E @0x4D78 → second W1C @0x4F93 → **TXPAUSE (0x0522) = 0xFF
+  @0x4F77** → **REG_SPS0_CTRL (0x0011) = 0 @0x7D1F**.
+- Afterwards the "recovery" H2C set — JOINBSSRPT(1) + RA_MASK|EXT +
+  cmd 59 — **cannot lift the pause**: cmd 59's unpause sequence (the
+  0x7D42 drain: SPS0_CTRL |= 9, TXPAUSE = 0) only runs inside the
+  mode-switch helper 0x45A2 when the mode nibble CHANGES; post-roam it
+  is unchanged, so the whole drain is skipped (observed: 477 steps,
+  only the rate mirror 0x01E7 written). TXPAUSE stays 0xFF forever.
+- The H2C path remains fully responsive throughout — every command
+  acked, exactly the field evidence (0x01CC = 0x00 for 16 min).
+
+This matches the field wedge signature: TX paused (unicast dead),
+beacons/broadcast still flowing, mailbox alive, only fw re-download
+recovers. Attribution notes, honestly: the TXPAUSE=0xFF write comes
+from the 0x4D7x deep path (0x4F77), NOT via the 0x7E2B beacon-loss
+counters as first hypothesized (0x8B0C/0x8B0D stayed 0 in this
+variant); the flags were hand-seeded (plausible, not legally derived
+end-to-end); and one field nuance stays open — the stick TX'd auth/
+assoc successfully at 01:23:46 during the real wedge, which a full
+0xFF pause should prevent (mgmt-queue bypass? partial pause windows?
+needs the TXPAUSE queue-bit map and finer trace reading).
+
+fw-side fix candidates this suggests (for a host-side workaround):
+after any roam/BSS transition, force the mode-switch to re-run (e.g.
+cmd 59 twice with different param[0]s, or a JOINBSSRPT(0)→(1) cycle
+AFTER the flags settle) so the drain/unpause path executes; or
+periodically rewrite TXPAUSE = 0 from the driver when associated.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
