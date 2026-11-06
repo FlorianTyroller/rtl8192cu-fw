@@ -8,7 +8,7 @@ and stubbed, MAC registers (XDATA 0x0000-0x0FFF) instrumented, known halt
 slots detected, and an H2C mailbox injector to drive the command path.
 
 Known ROM helpers are emulated from their reverse-engineered semantics
-(see analysis/findings.md); everything else in ROM logs and returns.
+(see analysis/firmware.md); everything else in ROM logs and returns.
 
 Usage:
   python3 -I sim8051.py IMG [--base 0x4000] [--steps N] [--trace]
@@ -620,7 +620,7 @@ def main():
     ap.add_argument('--trace', action='store_true')
     ap.add_argument('--h2c', help='prefill box 0 with id:b1:b2:b3 (hex)')
     ap.add_argument('--ext', help='prefill EXT regs 0x0088/0x0089 with b0:b1 (hex)')
-    ap.add_argument('--script', help='H2C/FWISR replay script (see findings.md)')
+    ap.add_argument('--script', help='H2C/FWISR replay script (see tools/sim-scripts/)')
     ap.add_argument('--fwisr', help='inject interrupt: hex byte(s) for FWISR '
                     '0x0134.. (e.g. 20 = FWISR0.b5 clock-off); enters via '
                     'vector 0x60F2 with a synthetic interrupted-PC frame')

@@ -2,7 +2,7 @@
 # kind: code | data | xdata | reg | vec
 # Confirmed = semantics verified against bytes; guess = plausible, unverified
 # 2026-11-05 (2): dispatch pairing corrected by recursive descent; see
-# findings.md "H2C command protocol". Old table was shifted by one hop.
+# firmware.md "H2C protocol". Old table was shifted by one hop.
 code	0x4000	vec_reset	reset vector slot 0: LJMP 0x4630 [confirmed]
 code	0x4013	vec_int	vector slot 0x13: LJMP 0x60F2, interrupt handler [confirmed]
 code	0x4503	halt_slot_1	LJMP $ (self), error halt [confirmed]
@@ -222,7 +222,7 @@ data	0x00D1	sfr_hw_latches	custom SFRs 0xD1-0xD7/0xD9: hw interrupt-context latc
 xdata	0x052C	ra_mask_reg	reg written by RA_MASK handler (0x56A6) [sim-observed]
 # field-wedge correlation 2026-11-06 (5): roam burst = JOINBSSRPT(02)x2 + RA_MASK|EXT(86)x2
 # (mask 0xFFFFA00F); H2C path alive throughout (0x01CC=0x00 for all 771 reads);
-# wedge = progressive MAC RX datapath failure. See findings.md.
+# wedge analysis: see wedge.md.
 # documentation completion pass 2026-11-06 (15)
 xdata	0x01CF	REG_HMTFR_3	host->fw 8051 clock-off request (bit 5); kernel writes HMTFR+3=0x20, fw FWISR0.b5 handler double-checks it [confirmed, kernel+fw]
 code	0x62CD	fw_clock_off_req	FWISR0.b5 handler = the 8051 clock-off/power-down request path; fw acks by clearing SYS_FUNC CPU_ENABLE-family bit, driver polls it (rtl8xxxu power-off, 5s timeout) [confirmed]

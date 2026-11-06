@@ -1,4 +1,4 @@
-# Exact H2C burst from the 2026-11-06 01:09:33 roam event (doorpi capture),
+# Exact H2C burst from the 2026-11-06 01:09:33 roam event (field capture),
 # ring-aligned for a sim starting at ring state 0.
 # Run: python3 -I tools/sim8051.py IMG --script tools/sim-scripts/roam-burst.script
 state

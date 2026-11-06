@@ -1,6 +1,7 @@
 # Reproduces the TXPAUSE-stuck-0xFF failure mode (findings 2026-11-06 (8)):
-# legal H2C warm-up, two hand-seeded assoc-flag bytes (see findings (10):
-# ROM-mediated, not legally derivable statically), then a timer-event storm
+# legal H2C warm-up, two hand-seeded assoc-flag bytes (ROM-written in the real fw,
+# not derivable statically - see firmware.md "Boot-ROM interface"),
+# then a timer-event storm
 # via the ROM vector, then the recovery H2C set that CANNOT unpause.
 state
 box 0 05000040             # RSSI
