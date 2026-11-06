@@ -658,6 +658,39 @@ Support: replay scripts are in tools/sim-scripts/ (roam-burst,
 txpause-stuck, clean-assoc); wedge traces land in ~/wedge-captures/ on
 this machine (NOT the repo — they embed firmware-download bytes).
 
+## Forced-roam experiment, variant (a): CLEAN (2026-11-06 (11))
+
+User power-cycled the primary AP at 15:07:50 (router UI). The stick
+handled it without incident — **no wedge, no watchdog intervention**,
+~70 s total disruption:
+
+- 15:08:00 deauth from primary → hunt: repeater 84:90:0a (3 auth tries,
+  no reply — flaky again), a third AP AA:00:00:00:00:03 (no reply),
+  two aborted rounds to the still-rebooting primary
+- 15:08:49 associated to the repeater (after "regulatory prevented
+  using AP config, downgraded"), left it 3 s later when the primary
+  reappeared, one more flaky repeater auth timeout
+- 15:09:02+ back on the primary. Watchdog: zero unreachable counts.
+
+The usbmon capture (~/wedge-captures/20261106-1508-forced-roam.gz)
+shows the healthy roam uses **the identical H2C command vocabulary** to
+the 2026-11-06 01:09 event: JOINBSSRPT(0) → RA_MASK|EXT →
+JOINBSSRPT(1) → RA_MASK|EXT — executed twice (repeater, then primary)
+within 62 s — followed by a fully working link. **The BSS-transition
+burst is benign by itself**; the 01:09 outage remains attributed to the
+repeater environment (its auth flakiness recurred today). Consistent
+with the TXPAUSE-stuck lab mode requiring flag-block state a healthy
+roam does not produce.
+
+Environment note: a THIRD AP (AA:00:00:00:00:03) appeared in the auth
+candidates — identity unconfirmed (user's own? neighbor with matching
+SSID?). Three-AP environment recorded for future discriminator checks.
+
+Remaining open from the plan: variant (b) (both APs unreachable → pure
+beacon loss into the timer/flag machinery) is not triggerable from the
+router UI alone (needs the repeater down too); the log-rotation fix on
+doorpi still pending (1 GB log, ~6 days headroom; needs sudo).
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
