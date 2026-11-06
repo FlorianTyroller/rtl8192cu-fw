@@ -1,3 +1,9 @@
+---
+title: "Firmware reference"
+redirect_from:
+  - /analysis/firmware.md
+---
+
 # RTL8188CUS / RTL8192CU firmware — reference
 
 Factual documentation of the 8051 MAC firmware `rtl8192cufw_TMSC.bin`

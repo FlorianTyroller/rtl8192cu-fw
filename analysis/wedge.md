@@ -1,3 +1,9 @@
+---
+title: "The wedge investigation"
+redirect_from:
+  - /analysis/wedge.md
+---
+
 # The wedge investigation
 
 The RTL8188CU/8192CU family has a long-standing field problem: the

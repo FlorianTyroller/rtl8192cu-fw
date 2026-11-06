@@ -1,3 +1,9 @@
+---
+title: "Findings index"
+redirect_from:
+  - /analysis/findings.md
+---
+
 # Findings
 
 This file was the running investigation log. The content now lives in

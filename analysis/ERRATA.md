@@ -1,3 +1,9 @@
+---
+title: "Errata"
+redirect_from:
+  - /analysis/ERRATA.md
+---
+
 # Errata
 
 Claims made during the investigation that were later corrected. Kept

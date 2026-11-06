@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://fw.ocean.rip/sitemap.xml
