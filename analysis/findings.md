@@ -422,6 +422,59 @@ position-stable; only the 0x4Fxx-0x7E application layer shifted.
 B canonical seeds: 0x43BA 0x4503 0x4506 0x4860 0x4AE4 0x4B87 0x4FDE
 0x5062 0x506F 0x523C 0x604E 0x675B 0x7DA7 0x7DB4.
 
+## First fully-captured wedge, decoded (2026-11-06 (5))
+
+The usbmon capture on doorpi caught a complete wedge tonight
+(2026-11-06 01:09–01:26). Trace saved at ~/wedge-captures/
+20261106-0126-wedge.gz (lines 700000–990000 of /var/log/usbmon-wifi.log;
+kept out of this repo — it embeds firmware-download bytes). Register
+accesses decode as USB control rq05 (wValue = MAC register address),
+which makes the whole driver↔fw conversation readable with our reg map.
+
+Anatomy (anchor 0 s = 01:25:54.7, the USB reset):
+
+| time | event |
+|------|-------|
+| 01:09:33 (−981 s) | signal to primary AP collapses; **roam to second AP AA:00:00:00:00:02**. H2C burst: JOINBSSRPT(0) → RA_MASK\|H2C_EXT (32-bit mask 0xFFFFA00F via EXT regs 0x0088=ffff) → JOINBSSRPT(1) → RA_MASK\|EXT. Assoc OK (aid 18). |
+| 01:09:35 (−980 s) | **unicast RX collapses** (906 → ~150 frames/10 s; residual = beacons/broadcast). Driver RSSI reports halve: 0x49/0x4a → 0x1e–0x22. |
+| −980 s … −316 s | **broadcast-only limbo, ~11 min**: driver keeps the RSSI H2C cycle (every 2.08 s, boxes rotating), and **0x01CC reads return 0x00 every single time** — the fw acks every mailbox promptly. The 8051 command path is fully alive. |
+| 01:20:38 (−316 s) | RSSI cycle stops (driver-side: nothing left to report). |
+| 01:23:14 (−160 s) | auth-retry storms; **RX is flaky, not dead**: 3 auth attempts to primary AP get no reply, but 01:23:27 auth to second AP succeeds (assoc times out), 01:23:46 auth **and** AssocResp both succeed (aid 22). Low-rate frames sometimes get through. |
+| 01:25:53 (0−1.7 s) | watchdog reloads driver; `rtl8xxxu_active_to_emu: Disabling MAC timed out` — the fw never completes the register-level power-down handshake. USB reset, fw reload, recovery on the primary AP. |
+
+Conclusions that change the model:
+
+- **The wedge is not an 8051 hang.** The H2C/mailbox state machine stayed
+  responsive for the entire 16-minute death spiral (0x01CC = 0x00 even at
+  −1 s). Neither the EA-off deadlock shape nor a spin point matches.
+- The wedge lives in the **MAC RX datapath / RX-processing**, is
+  progressive, and rate-dependent (basic-rate frames sometimes pass,
+  data doesn't).
+- **Trigger correlates with AP roam**, not group rekey: the burst is
+  exactly the BSS-transition H2C sequence (JOINBSSRPT×2 + RA_MASK|EXT×2),
+  landing on handlers 0x7485 (opmode→IDATA 0x21), 0x56A6 (RA_MASK,
+  chip-version branch, EXT mask reassembly) and the 0x7E06/0x7DC1
+  opmode→TXPAUSE machinery — with the beacon-loss counters 0x8B0C/0x8B0D
+  (threshold 0x8B10) firing mid-transition because a roam IS a
+  beacon-loss storm.
+- The telemetry PI.md called "~20 s of broadcast-only" was **~11–13 min**
+  tonight: the broadcast-only phase is long and variable; only its end
+  (auth failures) trips the watchdog.
+- Previous wedges this boot (Nov 4 21:06, Nov 5 07:10) predate the
+  surviving logs — from now on, every wedge's journal should be checked
+  for a "authenticate with <BSSID ≠ primary>" roam burst just before
+  onset (cheap discriminator for the roam hypothesis).
+- Repro candidate: force a roam (power-cycle the primary AP while the
+  stick is associated) — if that reproduces the wedge on demand, we have
+  a live trigger instead of a 1/day wait.
+
+Fw-side suspects, in order: (1) RA_MASK handler 0x56A6 racing the
+beacon-loss/power-save path during BSS transition (all EA-off, ROM calls
+in the loop); (2) the opmode→TXPAUSE/queue reconfigure (0x7DC1/0x4DE0
+flag block); (3) an RX-aggregation/filter state left inconsistent by the
+transition (FWISR0.b0/b1 latch path). The emulator (sim8051.py) can now
+replay this exact H2C sequence against the image — next step.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.

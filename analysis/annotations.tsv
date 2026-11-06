@@ -122,6 +122,9 @@ xdata	0x05F8	REG_SCH_TX_CMD	scheduler TX command, drained by 0x7E9A (kernel name
 xdata	0x0011	REG_SPS0_CTRL	pad/power-saving control used by tx_drain family (kernel name) [confirmed]
 data	0x00D1	sfr_hw_latches	custom SFRs 0xD1-0xD7/0xD9: hw interrupt-context latches copied by FWISR0.b0/b1 handlers [confirmed usage]
 xdata	0x052C	ra_mask_reg	reg written by RA_MASK handler (0x56A6) [sim-observed]
+# field-wedge correlation 2026-11-06 (5): roam burst = JOINBSSRPT(02)x2 + RA_MASK|EXT(86)x2
+# (mask 0xFFFFA00F); H2C path alive throughout (0x01CC=0x00 for all 771 reads);
+# wedge = progressive MAC RX datapath failure. See findings.md.
 # other switch tables found by descent
 code	0x580F	switch_table_580F	12 cases: 0,1,2,3,4,5,6,0x0C,0x0D,0x0E,0x0F (state-machine?) [ids confirmed, role unknown]
 code	0x6597	switch_table_6597	7 cases 0-6 (ids confirmed, role unknown)
