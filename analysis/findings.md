@@ -280,6 +280,36 @@ param[N] (e.g. cmd 45's "SYS_FUNC gate" is really `param[2] & 1`; RA_MASK's
 "SYS_CFG version bits" is param[4]). Reg reads that survive are the direct
 MOVX ones (TDECTRL 0x0209, DRIVER_EARLY_INT 0x0558, 0x01E7).
 
+## Interrupt architecture, first pass (2026-11-06)
+
+- 0x60F2 (vector 0x4013): full-context save (ACC/B/DPTR/PSW/AR0–7, bank 0),
+  then **writes its own address little-endian to regs 0x01C4/0x01C5**
+  ({0xF2,0x60}), then reads the 4-byte **REG_FWISR 0x0134–0x0137**, ANDs
+  each byte with the fw-configurable enable masks in IDATA 0x28–0x2B,
+  parks the masked copies in IDATA 0x2C–0x2F, and dispatches by bit
+  tests (source 0 first at 0x613A, W1C: writes 1 back to 0x0134). A long
+  chain of source handlers fills 0x613A–0x65xx. Per-source naming
+  (RX/USB/TX-beacon/…) is open — next session's map.
+- The other ROM-entered handlers do the same 0x01C4 announce: 0x4B87
+  writes {0x87,0x4B}, 0x6891 writes {0x91,0x68}. **0x01C4/0x01C5 is a
+  host-readable "last fw entry point" indicator** in the MCUTST area —
+  when a stick wedges, reading that register pair over USB tells us
+  which handler the fw entered last. Field-diagnostic gold; the usbmon
+  service on doorpi should capture it on the next wedge.
+- The `SETB C; JBC AF,1; CLR C; PUSH PSW` prologue seen on h2c_service,
+  cmd 44, 0x7889, 0x45A2 … is the Keil critical-section idiom: bit AF =
+  IE.7 = EA; it saves and clears the global interrupt enable. PSW is
+  restored (`POP D0; MOV AF,C`) only at the very end of h2c_service —
+  **the entire H2C chain (dispatch → trampoline → handler → ack) runs
+  with interrupts disabled.** Consequence for the wedge hunt: any handler
+  (or boot-ROM call it makes, e.g. SETPWRMODE's 0x2A8B) that polls a
+  register advanced only by an interrupt or the USB side while EA is off
+  hangs the 8051 permanently. That is the exact deadlock shape to audit
+  handler-by-handler.
+- 0x4DD9 / 0x6532 / 0x6933 (first-guessed "switch walkers") are shared
+  interrupt epilogues: POP chains + RETI, entered by AJMP from the
+  source handlers.
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
@@ -295,11 +325,14 @@ MOVX ones (TDECTRL 0x0209, DRIVER_EARLY_INT 0x0558, 0x01E7).
    the EXT layout matches the driver's exactly. Remaining soft spots: cmd
    44's functional name (checksum offload?), cmd 75's purpose, and the
    all-zero per-id limit table at 0x41BA.
-4. Interrupt architecture: 0x60F2 dispatch + ROM-entered 0x4B87 / 0x688A /
-   the RETI stubs (0x4DD9, 0x6532, 0x6933 — those are POP/RETI epilogues,
-   not switch walkers as first guessed). Which interrupt sources exist,
-   what shares state with the H2C path — deadlock candidates for the
-   field wedge.
+4. Interrupt architecture: **first pass done 2026-11-06** (FWISR-based
+   dispatch, enable masks IDATA 0x28–0x2B, shared RETI epilogues, the
+   0x01C4 handler-PC indicator, EA-off-during-H2C fact — see above).
+   Remaining: (a) per-source map of the 0x613A–0x65xx handlers (which
+   FWISR bit is RX / USB / beacon), (b) the **EA-off deadlock audit**:
+   walk every H2C handler + its ROM calls for polling loops that wait on
+   interrupt-advanced state — the wedge shape, (c) whether the host can
+   read 0x01C4/0x01C5 on a wedged stick (add to doorpi's wedge capture).
 5. Group-key/rekey path: correlate with the field observation that outages
    cluster after the AP's hourly group rekey.
 6. 8051 emulator (SIM): run the image against stubbed registers, replay a
