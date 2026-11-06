@@ -682,9 +682,15 @@ repeater environment (its auth flakiness recurred today). Consistent
 with the TXPAUSE-stuck lab mode requiring flag-block state a healthy
 roam does not produce.
 
-Environment note: a THIRD AP (AA:00:00:00:00:03) appeared in the auth
-candidates — identity unconfirmed (user's own? neighbor with matching
-SSID?). Three-AP environment recorded for future discriminator checks.
+Environment (user-confirmed): router on the ground floor — the Pi sits
+**10 cm from it** — plus exactly **two repeaters**: one in the basement,
+one on the 1st floor. All three observed BSSIDs are the user's own:
+AA:00:00:00:00:01 = router, AA:00:00:00:00:02 and AA:00:00:00:00:03 =
+the two repeaters (which is which floor is unconfirmed). Open question
+this raises: with the stick 10 cm from the router, why did it roam away
+at 01:09 at all? Something made it miss primary beacons — router radio
+blip (check the router's own event log) or an fw-side beacon-loss
+false-fire. Worth checking the router UI history.
 
 Remaining open from the plan: variant (b) (both APs unreachable → pure
 beacon loss into the timer/flag machinery) is not triggerable from the
