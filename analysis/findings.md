@@ -732,6 +732,34 @@ future event gets one more check: if the stick is associated to the
 ROUTER and the gateway is unreachable, that is stick-side until proven
 otherwise (no repeater in the path).
 
+## Stress series: 5/5 clean (2026-11-06 (14))
+
+Five router restarts in ~20 min (four UI restarts + one power cycle,
+the last two back-to-back). Each forced the full roam dance — stick
+hunting through both repeaters (with repeated "regulatory prevented
+using AP config, downgraded" on repeater auths and assoc-timeouts while
+the mesh re-formed), always ending back on the primary:
+
+| cycle | window | gateway-fail max | outcome |
+|-------|--------|------------------|---------|
+| 1 | 15:39:47–15:40:47 | (1) | assoc primary 15:40:47 |
+| 2 | 15:46:03–15:46:56 | (1) | assoc primary 15:46:56 (via both repeaters) |
+| 3 | 15:50:28–15:51:26 | (1) | assoc primary 15:51:26 |
+| 4 | 15:56:08–15:57:15 | (1)+(2) | assoc primary 15:57:15 |
+| 5 | 15:59:50–16:00:54 | (1) | assoc primary 16:00:54 |
+
+**No driver reload, no MAC-disable timeout, no wedge — the firmware
+survived five consecutive roam churns (incl. back-to-back restarts)
+untouched.** The watchdog counter never reached (3). The Nov-5 shape
+(assoc-to-router + data path dead) did not appear. Cumulative evidence:
+the fw is robust under every environmental stress we can generate on
+demand; the historical wedges correlate with environmental churn, and
+the single unresolved case (Nov 5 07:09) remains the only
+stick-suspicious data point. Stress-testing more of the same has
+diminishing returns — passive collection with the discriminator is the
+rational mode now. (H2C-liveness check across all five cycles from the
+capture pending.)
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
