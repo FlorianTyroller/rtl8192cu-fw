@@ -585,7 +585,7 @@ class Sim:
             v = self.xdata[a] & ~v & 0xFF
         self.xdata[a] = v & 0xFF
         if a < 0x1000 and len(self.reg_writes) < 8192:
-            self.reg_writes.append((self.steps, a, self.xdata[a]))
+            self.reg_writes.append((self.steps, a, self.xdata[a], self.pc))
 
     def note_xwrite(self, a, v):
         self.xwrite(a, v)
@@ -666,7 +666,7 @@ def main():
                 for i in range(4):
                     sim.xdata[0x0134 + i] = bb[i] if i < len(bb) else 0
                 sim.idata[0x28:0x2C] = b'\xff' * 4
-                sim.xdata[0x01CF] = bb[3] if len(bb) > 3 else 0
+                sim.xdata[0x01CF] = bb[0]
                 sim.sfr[0xA8 - 0x80] = 0x80
                 entry, tag = 0x60F2, f'fwisr {parts[1]}'
             else:
@@ -680,7 +680,7 @@ def main():
             w = sim.reg_writes[n0:]
             print(f'[{tag[:14]:14s}] {sim.steps:7d} steps  halt={sim.halted}  '
                   f'regwrites={len(w)}: ' + ' '.join(
-                      f'{a:04X}<={v:02X}' for _, a, v in w[:14]))
+                      f'{a:04X}<={v:02X}@{pc:04X}' for _, a, v, pc in w[:14]))
         return
 
     h = sim.run(args.steps, trace=args.trace)

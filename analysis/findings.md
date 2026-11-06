@@ -489,27 +489,44 @@ reset path and the clock-off handler are two ends of one protocol).
 Also: MCUTST_1+N (0x01C0+N) is a per-box status byte; cmd 44's poll of
 0x01C3 is a wait on box 3's status.
 
-First divergence results (roam script = tonight's exact burst,
-ring-aligned; clean script = single JOINBSSRPT(1) + RA_MASK as control):
+Replay results — corrected 2026-11-06 (7); the first comparison was
+invalid (see below):
 
-- Same RA_MASK|EXT command, wildly different paths: **~1700 steps in
-  roam context vs ~346 in clean context**.
-- **Roam-only write: REG_INIDATA_RATE_SEL (0x0484) = 0x13** — the
-  initial data-rate selection gets reprogrammed only in the roam
-  sequence. Directly consistent with the field wedge's rate-dependent
-  RX behavior (basic-rate frames pass, data doesn't).
-- Ack behavior diverges too: the clean run ends with box 2's pending
-  bit never W1C-cleared (the service exited via the path that skips the
-  0x01CC ack) — worth instrumenting before trusting it as fw behavior
-  vs emulation artifact.
-- JOINBSSRPT parks opmode in IDATA 0x21 (= 1 after opmode=1) ✓ as
-  mapped.
+- **RA_MASK|EXT always programs REG_INIDATA_RATE_SEL+macid** — a
+  protocol-legal clean control (JOINBSSRPT(1) then RA_MASK, consecutive
+  ring boxes) takes the same ~1700-step path and writes 0x0484 = 0x13
+  exactly like the roam burst. The write comes from helper **0x5C4E**:
+  `[0x0484 + R7] = R5` — a macid-indexed rate-register writer (0x0480 =
+  INIRTS_RATE_SEL+macid, 0x0484 = INIDATA_RATE_SEL+macid); a sibling
+  helper writes macid classifications to 0x8722. The "roam-only rate
+  divergence" first reported here was an artifact and is withdrawn.
+- **The service is ring-strict** (verified dynamically and in code):
+  it services only the box the 0x8B51 ring points at and exits without
+  scanning when that box is not pending. An out-of-ring box write
+  starves until the ring reaches it — the real driver always writes
+  ring-consecutive boxes (trace: 3,0,1,2,3), so this constraint is
+  invisible in the field but is a real protocol property (and the reason
+  my first "clean control" never ran its RA_MASK at all).
+- **0x01C4 indicator gains a value: 0x60F3 = dispatcher-exit marker**,
+  written at 0x6519 after every interrupt pass. Readout table for a
+  wedged stick: 0x60F2 = stuck inside the interrupt dispatcher,
+  0x60F3 = interrupts completing normally (wedge elsewhere),
+  0x4B87/0x6891 = inside those ROM-entry handlers.
+- **Interleaved FWISR events (2.b3 timer, 2.b0 beacon/TXPAUSE, 0.b0 RX
+  context) between the roam commands: all clean** — no hangs, no ack
+  anomalies, no register-level corruption. The beacon/TXPAUSE handler's
+  actions are gated on mode globals (0x8B2C/0x8B2D family) that are zero
+  in a cold sim, so it writes nothing; exercising its real behavior
+  needs seeded state, and the MAC RX datapath itself is beyond pure-8051
+  emulation. Honest scope statement: the emulator proves the 8051-side
+  protocol and handlers stay consistent through the roam burst — the
+  wedge, per the field evidence, lives below that, in MAC state.
 
-Next: instrument the 0x56A6 RA_MASK handler's branch path in both
-contexts (which of the 1700 vs 346 steps differ, where 0x0484 comes
-from, which exit the ack takes), and add FWISR2.b3/b0 interleaves
-between the roam commands to model the beacon/timer events that fire
-during a real roam.
+Next: seed realistic globals (mode flags, 0x8B10 beacon-loss threshold,
+counters) via a legal H2C warm-up sequence, then re-inject FWISR2.b0/b3
+and watch TXPAUSE and the 0x7E2B beacon-loss path for opmode-dependent
+misprogramming; in parallel, the field discriminator (roam bursts in
+the journal before wedge onset) keeps running on doorpi.
 
 ## Open leads
 
