@@ -757,8 +757,10 @@ demand; the historical wedges correlate with environmental churn, and
 the single unresolved case (Nov 5 07:09) remains the only
 stick-suspicious data point. Stress-testing more of the same has
 diminishing returns — passive collection with the discriminator is the
-rational mode now. (H2C-liveness check across all five cycles from the
-capture pending.)
+rational mode now. H2C-liveness confirmed from the capture: 247 mailbox
+reads in the covered window, **zero stuck** (all returned 0x00), RSSI
+cycle continuous, and the captured transition uses the same benign
+burst (JOINBSSRPT(1) + RA_MASK|EXT ×2).
 
 ## Open leads
 
