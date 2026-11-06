@@ -310,6 +310,63 @@ MOVX ones (TDECTRL 0x0209, DRIVER_EARLY_INT 0x0558, 0x01E7).
   interrupt epilogues: POP chains + RETI, entered by AJMP from the
   source handlers.
 
+## FWISR source map and EA-off deadlock audit (2026-11-06 (2))
+
+Dispatcher (0x60F2) sources, in dispatch priority order. W1C = writes the
+bit back to the FWISR byte. FWISR1 (0x0135) has no handler in this build.
+
+| source | handler | behavior |
+|--------|---------|----------|
+| FWISR0.b0 | 0x613A | W1C; reads hw context latches (custom SFRs 0xD1–0xD7, 0xD9 → IDATA 0x4D–0x54), branches on their bits |
+| FWISR0.b1 | 0x628E | W1C; same SFR-latch copy → IDATA 0x56–0x5D; calls 0x5FA4 |
+| FWISR0.b3 | 0x62B4 | W1C only (pure ack) |
+| FWISR0.b4 | 0x62BF | W1C; sets IDATA 0x55 bit 4 |
+| FWISR0.b5 | 0x62CD | **clock-off/IPS entry** — see below |
+| FWISR0.b6 | 0x62F7 | W1C; updates mode-flag block 0x8B2C/0x8B2E/0x8B32/0x8B34 |
+| FWISR0.b7 | 0x620F | calls 0x4281, 0x5C66, 0x5CC3 (protocol event) |
+| FWISR2.b0 | 0x632C | biggest: W1C, TXPAUSE 0x0522, DUAL_TSF_RST 0x0553, 0x05FC; calls 0x4DE0/0x4E89/0x6539/0x655F/0x6582; reads cmd-75's 0x8B06 and cmd-45's 0x8B11 — beacon/TSF/TX scheduling |
+| FWISR2.b1 | 0x63EA | W1C, TXPAUSE; calls 0x4DE0, 0x6084 |
+| FWISR2.b2 | 0x641E | W1C; calls 0x46B3 |
+| FWISR2.b3 | 0x6439 | W1C, timer regs 0x013C/0x0157; calls 0x4B6C; writes beacon-early globals 0x8B3D/0x8B3E |
+| FWISR2.b4 | 0x6476 | W1C, 0x013C/0x0157; calls 0x4AFC; 0x8B1B |
+| FWISR2.b5 | 0x64A6 | W1C; calls 0x4949, 0x4A97; 0x8B1A |
+| FWISR2.b6 | 0x64CA | W1C; calls 0x4AFC |
+| FWISR3.b0 | 0x64F7 | calls 0x48FE, 0x4DE0, 0x7DC1; 0x8B31 |
+| FWISR3.b1 | 0x64EA | W1C; 0x8B2C |
+
+**FWISR0.b5 = the clock-off/IPS path** (0x62CD): quiesces everything —
+`REG_FWIMR[0x0130–0x0133] = 0` (via 0x519D, also FTIMR), clears 0x01CF
+bit 5, W1C, `IE = 0`, custom SFR 0xE8 = 0, clears reg 0x0003 bit 1 (the
+8051 clock gate), 16-cycle settle delay (0x520E), then **`SJMP $` at
+0x62F1**. Wake must come from outside (USB resume → hardware 8051
+restart); if that handshake fails, the chip sits at 0x62F1 forever with
+all interrupts masked. Third known spin point after the 0x4503/0x4506
+library error traps.
+
+**EA-off deadlock audit verdict**: a scanner over all H2C-reachable code
+(87 functions, call-graph closed over the census) found exactly three
+backward-jump hardware-adjacent loops — 0x725A, 0x7A79, 0x7AA3 — and all
+three are bounded self-incrementing counter loops (ROM call per step,
+fixed trip count). cmd 44's 0x01C3 status poll is bounded at 1000 retries
+(`[0x8AE2:0x8AE3]` vs 0x03E8) before giving up with ack bit 4; the
+REG_SCH_TX_CMD (0x05F8) drain at 0x7EA1 likewise caps at 1000. **No
+unbounded hardware poll exists in H2C-reachable image code.** The
+remaining deadlock surface is (a) the boot ROM (SETPWRMODE's 0x2A8B etc.
+— statically unassessable, needs the emulator) and (b) the three
+intentional spin points. Corollary: a field wedge that persists across
+the 1000-retry bounds is either stuck in ROM or at a spin point.
+
+Other finds from the same sweep: 0x7E2B is the **timer-event/beacon-loss
+processor** — W1C-style drains of regs 0x0157/0x015B/0x015F, writes timer
+int reg 0x013C bits 2/3/4, counts events in 0x8B0C and misses in 0x8B0D
+(incremented when opmode == infra and the count crosses 0x8B10 — the
+value cmd 45 stores: the beacon-loss threshold feeding power-save).
+0x7DC1 maps opmode → TXPAUSE (0x00/0xFF/hold) and acks via **0x01C6 bit
+3** — so the ack register now has four known bits: 0 unknown-cmd, 1
+processed, 3 opmode-change, 4 offload-done. The 0x7C4A/0x7C50/0x7D42/0x7D23
+family are TX-drain/power-transition sequences built on ROM helpers
+(0x27DE/0x2A7F/0x2FD9/0x2A8B/0x3481/0x3754) and REG_SPS0_CTRL (0x0011).
+
 ## Open leads
 
 1. ~~Recursive descent in tools/dis8051.py~~ **done 2026-11-05 (2)**, incl.
@@ -325,14 +382,13 @@ MOVX ones (TDECTRL 0x0209, DRIVER_EARLY_INT 0x0558, 0x01E7).
    the EXT layout matches the driver's exactly. Remaining soft spots: cmd
    44's functional name (checksum offload?), cmd 75's purpose, and the
    all-zero per-id limit table at 0x41BA.
-4. Interrupt architecture: **first pass done 2026-11-06** (FWISR-based
-   dispatch, enable masks IDATA 0x28–0x2B, shared RETI epilogues, the
-   0x01C4 handler-PC indicator, EA-off-during-H2C fact — see above).
-   Remaining: (a) per-source map of the 0x613A–0x65xx handlers (which
-   FWISR bit is RX / USB / beacon), (b) the **EA-off deadlock audit**:
-   walk every H2C handler + its ROM calls for polling loops that wait on
-   interrupt-advanced state — the wedge shape, (c) whether the host can
-   read 0x01C4/0x01C5 on a wedged stick (add to doorpi's wedge capture).
+4. ~~Interrupt architecture~~ **done 2026-11-06 (2)**: per-source FWISR
+   map (above), the FWISR0.b5 clock-off spin at 0x62F1, and the EA-off
+   audit verdict (image code clean; risk = boot ROM + spin points).
+   Remaining small: name the individual FWISR sources properly (RX vs
+   USB vs timer vs beacon — the latch-copy and callee evidence gives
+   strong hints but no definitive names), and confirm the host can read
+   0x01C4/0x01C5 on a wedged stick (add to doorpi's capture).
 5. Group-key/rekey path: correlate with the field observation that outages
    cluster after the AP's hourly group rekey.
 6. 8051 emulator (SIM): run the image against stubbed registers, replay a
