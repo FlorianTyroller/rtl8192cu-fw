@@ -686,11 +686,20 @@ Environment (user-confirmed): router on the ground floor — the Pi sits
 **10 cm from it** — plus exactly **two repeaters**: one in the basement,
 one on the 1st floor. All three observed BSSIDs are the user's own:
 AA:00:00:00:00:01 = router, AA:00:00:00:00:02 and AA:00:00:00:00:03 =
-the two repeaters (which is which floor is unconfirmed). Open question
-this raises: with the stick 10 cm from the router, why did it roam away
-at 01:09 at all? Something made it miss primary beacons — router radio
-blip (check the router's own event log) or an fw-side beacon-loss
-false-fire. Worth checking the router UI history.
+the two repeaters (which is which floor is unconfirmed). **Follow-up, answered from the capture (2026-11-06 (12)):** the primary
+DID stop beaconing. The capture's bulk-in stream around the roam holds
+two periodic beacon classes with distinct sizes and TSF phases: a
+158-B stream that **stops dead at 01:09:27.7** — six seconds before the
+roam — and a 150-B stream (the repeater's beacons, received all along
+on the shared mesh channel; its RX-descriptor profile changes shape
+after the roam when it becomes the serving BSS). So: primary beacons
+vanished at 01:09:27.7 → mac80211 beacon-loss disconnect (~6 s) → roam
+to the repeater → repeater backhaul dead → outage. With the stick 10 cm
+from the router, the primary's radio must have blipped (the Speedport
+Smart 4 exposes no event log to check what it did). The 2026-11-06
+01:09 event is now explained end-to-end with **zero firmware-side
+evidence**. The fw remains clean across every captured event so far;
+the hunt continues passively.
 
 Remaining open from the plan: variant (b) (both APs unreachable → pure
 beacon loss into the timer/flag machinery) is not triggerable from the
