@@ -266,12 +266,18 @@ class Sim:
             if self.rd_bit(b):
                 self.wr_bit(b, 0)
                 nxt = rel(pc + 3, rd(pc + 2))
+            else:
+                nxt = pc + 3
         elif op == 0x20:                    # JB
             if self.rd_bit(rd(pc + 1)):
                 nxt = rel(pc + 3, rd(pc + 2))
+            else:
+                nxt = pc + 3
         elif op == 0x30:                    # JNB
             if not self.rd_bit(rd(pc + 1)):
                 nxt = rel(pc + 3, rd(pc + 2))
+            else:
+                nxt = pc + 3
         elif op == 0x40:                    # JC
             if self.cy():
                 nxt = rel(pc + 2, rd(pc + 1))
@@ -538,7 +544,7 @@ class Sim:
             self.halted = f'unimplemented opcode {op:02X} at {pc:04X}'
             return False
         self.pc = nxt & 0xFFFF
-        return True
+        return self.chk_halt(self.pc)
 
     # helpers for the ALU group
     def _rhs(self, op, pc):
@@ -608,6 +614,9 @@ def main():
     ap.add_argument('--trace', action='store_true')
     ap.add_argument('--h2c', help='prefill box 0 with id:b1:b2:b3 (hex)')
     ap.add_argument('--ext', help='prefill EXT regs 0x0088/0x0089 with b0:b1 (hex)')
+    ap.add_argument('--fwisr', help='inject interrupt: hex byte(s) for FWISR '
+                    '0x0134.. (e.g. 20 = FWISR0.b5 clock-off); enters via '
+                    'vector 0x60F2 with a synthetic interrupted-PC frame')
     ap.add_argument('--rom-stop', action='store_true',
                     help='halt on any ROM entry')
     args = ap.parse_args()
@@ -620,6 +629,16 @@ def main():
     sim.push(0xDE)
     sim.push(0x7E)                           # 0x7EDE = just past image end
     sim.pc = args.entry
+    if args.fwisr:
+        b = [int(x, 16) for x in args.fwisr.split(':')]
+        for i, v in enumerate(b[:4]):
+            sim.xdata[0x0134 + i] = v
+        # hardware-style interrupt entry: fw enable masks IDATA 0x28-0x2B
+        # default-open in the sim so injected bits reach the dispatcher
+        sim.idata[0x28:0x2C] = b'\xff' * 4
+        sim.xdata[0x01CF] = b[0]             # 0x01CF mirrors FWISR0 for handlers
+        sim.sfr[0xA8 - 0x80] = 0x80          # IE.7 = EA on
+        sim.pc = 0x60F2                      # vector slot 0x4013 target
 
     if args.h2c:
         b = [int(x, 16) for x in args.h2c.split(':')]
