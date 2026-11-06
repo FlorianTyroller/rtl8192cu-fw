@@ -32,7 +32,7 @@ T = {}
 REGS = {}  # value -> [names], loaded from kernel headers via --regs
 
 DEFAULT_WALKERS = {0x4394: 3, 0x43BA: 4}
-VECTOR_SCAN = 0x40  # scan this many header bytes for LJMP seeds
+VECTOR_SCAN = 0x50  # scan this many header bytes for LJMP seeds (vectors found at 0x00/0x13/0x43/0x4B)
 MAX_TABLE_ENTRIES = 128
 
 
