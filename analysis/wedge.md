@@ -16,7 +16,8 @@ standing discriminators. Factual firmware documentation lives in
 ## Test setup
 
 - **The stick**: Edimax-class RTL8188CUS USB adapter (MAC
-  80:1f:02:00:00:99), driven by rtl8xxxu with firmware
+  80:1f:02:00:00:99 — pseudonymized, device-specific part withheld),
+  driven by rtl8xxxu with firmware
   `rtl8192cufw_TMSC.bin` 88.2 — the exact image this repo documents.
 - **The capture Pi**: a Raspberry Pi 1 Model B serving as the field
   box. It runs the stick as its only network link, a watchdog service
@@ -26,7 +27,8 @@ standing discriminators. Factual firmware documentation lives in
   the rotation fix, roughly 2 h of history).
 - **Radio environment**: one primary AP (an ISP router,
   the gateway, with the Pi 10 cm beside it) and two same-SSID mesh
-  repeaters. BSSIDs used below:
+  repeaters. BSSIDs used below are pseudonyms; the real values are
+  deliberately not published:
   - **AP-P** `AA:00:00:00:00:01` — primary AP / gateway
   - **AP-R1** `AA:00:00:00:00:02` — repeater 1 (auth-flaky in every
     observed event; one 13-minute backhaul outage)
