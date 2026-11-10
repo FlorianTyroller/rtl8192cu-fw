@@ -41,10 +41,12 @@ Published are only analysis, annotations, and code (see
 - All seven active interrupt sources are named. The TX power/queue
   state engine, power-save engine, and both halves of rate adaptation
   are decoded.
-- The field-wedge investigation: every captured outage is explained by
-  the radio environment; one lab-reproduced firmware failure mode (an
-  unpausable TX pause with a real code path behind it) awaits field
-  confirmation.
+- **The wedge, solved** (see [wedge.md](analysis/wedge.md)): a live
+  field wedge was captured, interrogated register-by-register, and
+  root-caused — a skipped power-state transition wipes the RX
+  calibration registers (all-0xFF at 0x0DA2), the stick demodulates
+  garbage while its 8051 keeps heartbeating. Detection + automatic
+  prevention included.
 
 ## Quick start
 

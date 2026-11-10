@@ -6,12 +6,47 @@ redirect_from:
 
 # The wedge investigation
 
+> **The short version** — after 14 years of unexplained "stick stops
+> working until reload" reports on RTL8188CU/8192CU hardware, this
+> investigation caught, interrogated, and explained one live:
+> a skipped power-state transition leaves a chip power domain
+> isolated; its **RX calibration registers float to 0xFF**; the stick
+> demodulates garbage while its 8051 keeps running happily. Detection:
+> read `0x0DA2:8` over USB — the wedge reads all-0xFF (healthy sticks
+> hold values in the low 4 bytes). Fix: reload the driver, or better,
+> detect early and reload automatically. Full chain below.
+
 The RTL8188CU/8192CU family has a long-standing field problem: the
 stick silently stops passing traffic and only a driver reload (firmware
 re-download) recovers it. This document records the investigation:
 the capture setup, the captured events, the emulator evidence, and the
 standing discriminators. Factual firmware documentation lives in
 [firmware.md](firmware.md).
+
+## Detection and mitigation (the fix)
+
+The wedge signature is readable from userspace over USB with no driver
+support (`tools/regread.py` in this repo; works on Linux 6.18's
+changed usbfs ABI):
+
+    sudo python3 regread.py 0DA2:8
+
+- Healthy: the last 4 bytes hold live calibration values
+  (e.g. `FF FF FF FF 8A 39 D5 31` — the first 4 may read 0xFF healthy).
+- Wedged: **all 8 bytes 0xFF** — the calibration domain has lost
+  state. RX is dead or dying; the 8051 and H2C still answer.
+
+Recovery is an immediate driver reload (`modprobe -r rtl8xxxu;
+modprobe rtl8xxxu` — firmware re-download re-runs calibration; the
+stick recovers in under 10 s).
+
+**Automated prevention**: the capture Pi's watchdog now checks the
+signature every minute *before* the gateway ping — on all-FF it
+reloads the driver and logs `CALIBRATION WIPE DETECTED`. The zombie
+phase lasts days before total RX death, so early detection turns a
+multi-day silent degradation into a self-healing 30-second event.
+Note for implementers: after a reload, wait ~2 min before trusting the
+signature again (calibration repopulates during init).
 
 ## Test setup
 
