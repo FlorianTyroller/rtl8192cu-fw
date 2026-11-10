@@ -48,6 +48,15 @@ multi-day silent degradation into a self-healing 30-second event.
 Note for implementers: after a reload, wait ~2 min before trusting the
 signature again (calibration repopulates during init).
 
+**Catch-it-live monitor**: `tools/wifi-calmond.py` (deployed on the
+capture Pi as `wifi-calmond.service`) polls the signature every 20 s.
+On first detection it captures evidence *before* recovering — a full
+register dump and a copy of the live usbmon logs (so the wipe-moment
+driver↔firmware conversation cannot rotate away) — then reloads. The
+next wipe will be caught in the act; correlating its onset with the
+captured USB traffic is expected to close the one inferred link in the
+causal chain without any vendor input.
+
 ## Test setup
 
 - **The stick**: Edimax-class RTL8188CUS USB adapter (MAC
