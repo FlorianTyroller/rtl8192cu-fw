@@ -158,6 +158,31 @@ the 0x0Dxx/0x0Fxx cluster via the RTL8192C datasheet or vendor
 driver, and diff the recovery capture (driver reload sequence is in
 the usbmon window from 15:16).
 
+**The causal chain (final).** Every link evidenced except one strongly
+inferred:
+
+1. Roam churn drives the fw's mode/PS state engine through repeated
+   transitions (proven: mailbox remnants, blip cadence).
+2. A transition can be skipped or interrupted — the mode nibble
+   matches so the un-drain path never runs (proven possible: emulator
+   repro; the power-veto at 0x6781 is mapped code).
+3. The SPS0 power-isolation asserted by the drain paths is then left
+   asserted on some domain (inferred — this machinery is the only
+   domain manipulator on the chip).
+4. The unpowered domain's registers float to 0xFF — the calibration
+   cluster (proven: wiped cluster; fw and driver both provably never
+   write those addresses).
+5. RX demodulates garbage: stuck-length frame flood, zero BSS
+   (proven).
+6. The 8051 never notices — its RAM state says "calibrated", the
+   heartbeat runs, H2C answers (proven).
+7. Only a firmware re-download re-runs init and restores calibration
+   (proven: <10 s recovery on reload).
+
+The remaining unknown: which power domain, and whether the ROM or
+silicon performs the wipe during the interrupted transition (the boot
+ROM is unreadable). A RTL8192C datasheet would name the cluster.
+
 Operational notes: the watchdog script deliberately does nothing while
 eth0 has carrier ("wired link up, then WiFi isn't the problem") — with
 the cable in, no automatic unwedge will occur; recovery when wanted =
