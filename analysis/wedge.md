@@ -92,6 +92,53 @@ with stubbed ROM calls and W1C register semantics. Results:
   SPS0 settle poll (firmware.md, "State engines"). Zero field
   confirmation so far; no captured event matches it.
 
+## The Nov 7-10 event: first live-wedged specimen (under investigation)
+
+Timeline (router log + kernel + NetworkManager + watchdog, all
+cross-checked): associated since Nov 6 16:00; kernel and NM silent for
+2.5 days; watchdog pings to the gateway succeeded throughout while
+external hosts could not reach the Pi (broadcast RX dead, unicast RX/TX
+to the gateway alive — "zombie association"); spontaneous recovery via
+beacon-loss roam at Nov 9 17:33; brief data-path blips every 2-3 h
+after; at Nov 10 06:53 the radio died for good (auth attempts to all
+APs unanswered, supplicant blacklisted, endless scanning, zero
+associations). An Ethernet cable to the Pi (its Pi-1 RJ45) restored a
+control path while leaving the stick wedged — enabling the first
+**live register interrogation of a field wedge**, via tools/regread.py
+(updated for the Linux 6.18 usbfs struct change: the ctrltransfer
+struct gained a trailing data pointer; request number and calling
+convention now computed per-arch).
+
+Live wedge fingerprint (Nov 10, ~13:45):
+
+| register | value | meaning |
+|----------|-------|---------|
+| 0x01C4/5 | 0x50C6/0x50C7, toggling | **8051 main loop alive** (heartbeat) |
+| 0x01CC | 0x00 | H2C mailbox clear, idle |
+| 0x0130-3 (FWIMR) | 33 00 07 00 | init values, never changed |
+| 0x0134-7 (FWISR) | 08 01 00 02 | pending bits only on disabled sources — no stuck dispatch |
+| 0x0522 TXPAUSE | 0x00 | **TX not paused** — the emulator's TXPAUSE-stuck mechanism ruled out |
+| 0x06A0/2/4 RXFLTMAP | FFFF/0000/FFFF | management+data filters **open** |
+| 0x0608 RCR | 700060CE | plausible init value |
+| 0x0284 RXPKT_NUM | ~0 | no RX backlog |
+| 0x0136 FWISR2 | 0x00 | **no beacon-DMA interrupts** — 3 APs beaconing, MAC accepts nothing |
+
+Verdict so far: **every firmware-side suspect is eliminated** — the
+8051 brain is healthy, TX unpaused, filters open, USB control alive —
+while the **receive path is dead between PHY and MAC** (zero BSS
+visible in scans, no beacon processing, yet bulk-in traffic flows with
+unusable frames). Root-cause hunt continues with a baseband-register
+diff against the driver's init tables. The zombie phase now reads as
+the same failure progressing: broadcast RX died first (external
+unreachability with working gateway unicast), then unicast, then all
+RX.
+
+Operational notes: the watchdog script deliberately does nothing while
+eth0 has carrier ("wired link up, then WiFi isn't the problem") — with
+the cable in, no automatic unwedge will occur; recovery when wanted =
+driver reload from the Ethernet path. The stick stays wedged by choice
+(preserved specimen); capture and heartbeat monitoring continue.
+
 ## Firmware verdict so far
 
 Every captured event is explained by the environment. The firmware

@@ -18,14 +18,26 @@ Usage:
   sudo python3 -I regread.py --vendor 0bda --product 8176 01C4
 """
 import argparse
+import ctypes
 import fcntl
 import os
 import struct
 import sys
 
-USBDEVFS_CONTROL = 0
+# USBDEVFS_CONTROL = _IOWR('U', 0, struct usbdevfs_ctrltransfer).
+# Linux 6.18 added a trailing `void __user *data` pointer to the struct,
+# changing the encoded size (12 -> 16 on 32-bit, 24 on 64-bit) and the
+# calling convention (data buffer is now a pointer inside the struct).
+# Compute both request numbers at runtime and try new-style first.
+_PTR = ctypes.sizeof(ctypes.c_void_p)
+_SZ_NEW = 8 + 4 + _PTR + (_PTR - 8 - 4) % _PTR  # fields + pad before pointer
+REQ_NEW = (3 << 30) | (_SZ_NEW << 16) | (0x55 << 8) | 0
+REQ_OLD = (3 << 30) | (12 << 16) | (0x55 << 8) | 0
+REQ = None
 REALTEK_IDS = {('0bda', '8176'), ('0bda', '8179'), ('0bda', '8188'),
-               ('0bda', '8192'), ('0bda', '8812')}
+               ('0bda', '8192'), ('0bda', '8812'),
+               ('7392', '7811'),   # Edimax EW-7811Un
+               ('7392', '7811'), ('0df6', '005c'), ('2001', '3308')}
 
 
 def find_device(vendor, product):
@@ -43,11 +55,32 @@ def find_device(vendor, product):
     return None, None, None
 
 
+class CtrlTransfer(ctypes.Structure):
+    _fields_ = [('bRequestType', ctypes.c_uint8), ('bRequest', ctypes.c_uint8),
+                ('wValue', ctypes.c_uint16), ('wIndex', ctypes.c_uint16),
+                ('wLength', ctypes.c_uint16),
+                ('timeout', ctypes.c_uint32), ('data', ctypes.c_void_p)]
+
+
 def ctrl_read(fd, reg, length, timeout_ms=3000):
-    """usbdevfs_ctrltransfer: u8 u8 u16 u16 u16 u32, packed."""
-    hdr = struct.pack('<BBHHHI', 0xC0, 0x05, reg, 0x0000, length, timeout_ms)
-    buf = bytearray(hdr + b'\x00' * length)
-    n = fcntl.ioctl(fd, USBDEVFS_CONTROL, buf, True)
+    """Control IN via usbfs; supports pre- and post-6.18 struct layouts."""
+    global REQ
+    data = ctypes.create_string_buffer(length)
+    if REQ in (None, REQ_NEW):
+        ct = CtrlTransfer(0xC0, 0x05, reg, 0, length, timeout_ms,
+                          ctypes.addressof(data))
+        try:
+            n = fcntl.ioctl(fd, REQ_NEW, ct)
+            REQ = REQ_NEW
+            return data.raw[:n if 0 < n <= length else length]
+        except OSError as e:
+            if e.errno != 25:
+                raise
+            REQ = REQ_OLD
+    # pre-6.18: inline data after the 12-byte header
+    buf = bytearray(struct.pack('<BBHHHI', 0xC0, 0x05, reg, 0, length,
+                                timeout_ms) + b'\x00' * length)
+    n = fcntl.ioctl(fd, REQ_OLD, buf, True)
     return bytes(buf[12:12 + (n if n > 0 else length)])
 
 
