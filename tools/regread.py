@@ -86,10 +86,12 @@ def ctrl_read(fd, reg, length, timeout_ms=3000):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('regs', nargs='+', help='register(s), HEX, optional :len')
+    ap.add_argument('regs', nargs='*', help='register(s), HEX, optional :len')
     ap.add_argument('--vendor', help='override idVendor (hex, no 0x)')
     ap.add_argument('--product', help='override idProduct')
     ap.add_argument('--timeout', type=int, default=3000)
+    ap.add_argument('--dump', metavar='START:END',
+                    help='read register range to hex lines on stdout')
     a = ap.parse_args()
 
     path, v, pr = find_device(a.vendor, a.product)
@@ -100,6 +102,19 @@ def main():
 
     fd = os.open(path, os.O_RDWR)
     try:
+        if a.dump:
+            st, _, e = a.dump.partition(':')
+            start, end = int(st, 16), int(e, 16)
+            out = bytearray()
+            addr = start
+            while addr < end:
+                n = min(8, end - addr)
+                out += ctrl_read(fd, addr, n, a.timeout)
+                addr += n
+            for off in range(0, len(out), 16):
+                chunk = out[off:off + 16]
+                print(f'{start + off:04X}: ' + ' '.join(f'{b:02X}' for b in chunk))
+            sys.exit(0)
         for spec in a.regs:
             reg, _, ln = spec.partition(':')
             length = int(ln) if ln else 1
