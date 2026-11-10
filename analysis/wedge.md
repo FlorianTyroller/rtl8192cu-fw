@@ -133,6 +133,31 @@ the same failure progressing: broadcast RX died first (external
 unreachability with working gateway unicast), then unicast, then all
 RX.
 
+**Root-cause closure (Nov 10 afternoon):** the driver was reloaded
+from the Ethernet path — recovery in under 10 s (auth + assoc + IP on
+the first attempt), confirming a firmware-level wedge by instant
+recovery. The full readable register space (0x0000–0x0FFF) was dumped
+wedged, healthy-associated, and healthy-scanning
+(`tools/regread.py --dump`; snapshots in
+`analysis/wedge-regdump-20261110.txt` and the capture archive).
+Rigorous diff (wedged vs healthy in the same scanning state, 151
+differing bytes) isolates a **corrupted register cluster**: all-0xFF
+wipes at 0x0DA2–0x0DA9, 0x0F80–0x0F89, 0x0F90–0x0F98, 0x0FA2–0x0FA5,
+0x0FB8–0x0FBB, plus 0x0403/0x040B/0x040F stuck at 0xFF — registers
+unnamed in both kernel drivers (vendor-reserved; the IQK block at
+0x0E28+ shows only normal per-run calibration variance). The wiped
+cluster sits in the calibration/state storage region: with invalid RX
+calibration the demodulator produces the observed stuck-length garbage
+frame flood, zero BSS, zero beacon interrupts — every symptom
+explained. H2C mailbox remnants date the death: the last processed
+command was the JOINBSSRPT(opmode=0) of the 06:52:56 roam attempt,
+with EXT staging still holding the final RA_MASK high bytes (00 F0).
+The progressive arc (broadcast RX first → unicast → all RX) matches a
+drifting-then-wiped calibration. Next refinement, when wanted: name
+the 0x0Dxx/0x0Fxx cluster via the RTL8192C datasheet or vendor
+driver, and diff the recovery capture (driver reload sequence is in
+the usbmon window from 15:16).
+
 Operational notes: the watchdog script deliberately does nothing while
 eth0 has carrier ("wired link up, then WiFi isn't the problem") — with
 the cable in, no automatic unwedge will occur; recovery when wanted =
