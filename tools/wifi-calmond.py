@@ -107,12 +107,23 @@ def main():
         if not in_grace:
             try:
                 if not healthy(fd):
-                    capture_evidence(fd)
-                    os.close(fd)
-                    recover()
-                    path, _, _ = find_device(None, None)
-                    if path:
-                        fd = os.open(path, os.O_RDWR)
+                    # re-find: another actor (watchdog) may have reloaded
+                    # already; reading a stale fd yields garbage evidence
+                    p2, _, _ = find_device(None, None)
+                    if p2 != path:
+                        log('device instance changed - another actor '
+                            'reloaded; refreshing, no double recovery')
+                        os.close(fd)
+                        path = p2
+                        if path:
+                            fd = os.open(path, os.O_RDWR)
+                    else:
+                        capture_evidence(fd)
+                        os.close(fd)
+                        recover()
+                        path, _, _ = find_device(None, None)
+                        if path:
+                            fd = os.open(path, os.O_RDWR)
             except OSError:
                 try:
                     path, _, _ = find_device(None, None)

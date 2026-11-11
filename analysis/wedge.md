@@ -23,6 +23,38 @@ the capture setup, the captured events, the emulator evidence, and the
 standing discriminators. Factual firmware documentation lives in
 [firmware.md](firmware.md).
 
+## First catch: the monitor's maiden capture (Nov 10, 18:02)
+
+Deployed 15:40, first detection 18:02 — 2 h 22 min later. Full
+sequence, all on tape (evidence in the capture archive):
+
+1. **T−34 s**: the driver writes the MAC's CAM/BSSID table — an
+   index loop over 0x0670/0x0674 pairs, the data containing the
+   primary AP's BSSID, plus CR (0x0100) := 0xff02 and 0x0680 := 0xcf.
+   The last driver action before the wipe; RSSI polling continues
+   normally after it (fw H2C alive).
+2. **T−20 s … T0**: the calibration register 0x0DA6 reads all-FF
+   (wiped between two 20 s polls). A *different* domain's register
+   (0x0FB8, a live counter — values incrementing every poll) stays
+   alive for at least another minute: **the wipe is progressive
+   across power domains, not a single event**.
+3. **18:02:26**: the watchdog's own minute-cycle signature check
+   fires (its `0x0DA2:8` view went all-FF) → driver reload. The
+   "Disabling MAC timed out" on unload is now fully explained: the
+   firmware cannot complete the power-down handshake on a chip whose
+   domains are already dead.
+4. **18:02:49**: calmond's poll finds its fd stale (the watchdog's
+   reload re-enumerated the device), captures evidence (its
+   register dump hit the stale fd — fixed in v1.1 to re-find the
+   device and skip double recovery), reloads again, recovered
+   18:03:23. Detection-to-recovery: **34 s**.
+
+Net: the causal chain's trigger correlation is now on tape — a
+CAM/BSSID re-programming burst, then domain wipes, with the fw's
+command path alive throughout. The exact domain-loss mechanism
+(why a register write burst precedes domain state loss) remains the
+one open link; the trap is reset for the next event.
+
 ## Detection and mitigation (the fix)
 
 The wedge signature is readable from userspace over USB with no driver
