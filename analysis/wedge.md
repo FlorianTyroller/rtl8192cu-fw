@@ -265,6 +265,18 @@ the cable in, no automatic unwedge will occur; recovery when wanted =
 driver reload from the Ethernet path. The stick stays wedged by choice
 (preserved specimen); capture and heartbeat monitoring continue.
 
+**Provocation experiment (Nov 11, 23:00–00:00): clean negative.**
+40 connect/disconnect cycles (one CAM/BSSID re-programming each, the
+operation seen 34 s before the first wipe) — 40/40 associations
+succeeded, zero wipe detections, monitors idle throughout. The
+CAM-write burst is therefore substantially decoupled from causation:
+it was most plausibly the last ordinary driver activity before an
+independently timed failure. The surviving hypothesis is firmware-
+autonomous timing — the PS/state-engine transitions on the ~2–3 h blip
+cadence observed on Nov 9 — which host-side activity neither triggers
+nor prevents. Passive capture with the v1.2 kit remains the path; each
+natural incident now yields a full pre-reload register snapshot.
+
 ## Firmware verdict so far
 
 Every captured event is explained by the environment. The firmware
