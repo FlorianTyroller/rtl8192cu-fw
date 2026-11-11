@@ -26,7 +26,7 @@ try:
 except ImportError:
     sys.exit('regread.py must be installed alongside wifi-calmond')
 
-POLL_S = 20
+POLL_S = 10
 GRACE_S = 120                     # post-reload wait before trusting regs
 EVIDENCE_DIR = '/var/log/wifi-calmond'
 STAMP = '/run/wifi-calmond.lastreload'
@@ -49,10 +49,22 @@ def healthy(fd):
     return False
 
 
+PRIORITY_REGS = (0x01C4, 0x01CC, 0x0130, 0x0134, 0x013C,
+                 0x0522, 0x0608, 0x06A0, 0x0DA2, 0x0DA6, 0x0FB8)
+
+
 def capture_evidence(fd):
     ts = int(time.time())
     d = f'{EVIDENCE_DIR}/wipe-{ts}'
     os.makedirs(d, exist_ok=True)
+    # priority regs first: the device can die deeper mid-dump
+    with open(f'{d}/priority-regs.txt', 'w') as f:
+        for reg in PRIORITY_REGS:
+            try:
+                data = ctrl_read(fd, reg, 8, timeout_ms=2000)
+            except OSError:
+                data = b''
+            f.write(f'0x{reg:04X}: ' + ' '.join(f'{b:02X}' for b in data) + '\n')
     with open(f'{d}/regs-0000-1000.txt', 'w') as f:
         addr = 0
         while addr < 0x1000:
