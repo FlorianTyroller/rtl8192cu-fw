@@ -47,7 +47,8 @@ Published are only analysis, annotations, and code (see
   driver reload revived it in seconds. A claimed root cause
   ("calibration register wipe") was published and then retracted after
   external review — the registers were saturating PHY error counters.
-  Errata kept; the hunt continues with passive PHY-counter telemetry.
+  Errata kept; the hunt continues with a passive RX-health logger
+  (beacon and packet rates; no automatic action on register values).
 
 ## Quick start
 

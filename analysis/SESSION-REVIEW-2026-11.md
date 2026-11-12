@@ -1,5 +1,15 @@
 # Session review brief — November 2026 dig (Nov 5–12)
 
+> **SUPERSEDED (2026-11-12).** This brief was written *before* the
+> external review it asked for. Its central belief — a "calibration
+> register wipe" detected by `0x0DA2:8` all-0xFF — is wrong: those
+> registers are saturating PHY error counters. Timeline items 8–12 and
+> the whole "Current belief state" section are retracted, and item
+> 12's numbers do not match the Pi's journal (31 watchdog fires from
+> Nov 10 16:39 to Nov 12 08:51, starting before the provocation, not
+> 21 fires starting after it). Current state: [wedge.md](wedge.md),
+> [ERRATA.md](ERRATA.md) #11. Kept unedited below as a record.
+
 Written for an independent reviewer. Read alongside the repo; every
 claim below is checkable against a file named in brackets. The intent
 is audit: find our blind spots, wrong inferences, and unexplored

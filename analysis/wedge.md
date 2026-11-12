@@ -6,33 +6,19 @@ redirect_from:
 
 # The wedge investigation
 
-> **RETRACTED 2026-11-12 (external review): the "calibration wipe"
-> root cause is wrong.** The registers at 0x0DA2-0x0DA9 and 0x0F80+
-> are 16-bit OFDM PHY error counters (rtlwifi: ROFDM_PHYCOUNTER1/2/3),
-> ticking 10-20/s on an associated stick and saturating at 0xFFFF
-> after ~1 h. The "wipe signature" was a clock; the "recurring wipe
-> mode" was the watchdog reloading a healthy link every ~85 min (35
-> times); the "progressive cross-domain wipe" was counters saturating
-> at different rates; the register "diff" compared days of uptime
-> against minutes. Verified against rtlwifi reg.h, minute-apart
-> healthy dumps, and live counter reads. **What survives:** the Nov 10
-> 06:53 event is a real RX wedge (fw alive, H2C answering, 0 BSS for
-> hours, reload recovers) — its root cause is OPEN again. The Nov 7-9
-> zombie phase (externally verified 2.5-day one-way unreachability)
-> also stands, mechanism unknown. The signature check has been removed
-> from the Pi (monitoring is now a passive counter-rate logger,
-> wifi-calmond v2.0); PHY-counter saturation rate may yet serve as an
-> early detector — as telemetry, never as a reload trigger.
-
-> **The short version** — after 14 years of unexplained "stick stops
-> working until reload" reports on RTL8188CU/8192CU hardware, this
-> investigation caught, interrogated, and explained one live:
-> a skipped power-state transition leaves a chip power domain
-> isolated; its **RX calibration registers float to 0xFF**; the stick
-> demodulates garbage while its 8051 keeps running happily. Detection:
-> read `0x0DA2:8` over USB — the wedge reads all-0xFF (healthy sticks
-> hold values in the low 4 bytes). Fix: reload the driver, or better,
-> detect early and reload automatically. Full chain below.
+> **Status (2026-11-12): root cause OPEN.** One real RX wedge was
+> interrogated live (Nov 10 06:53): 8051 alive, H2C answering, TX not
+> paused, MAC init registers intact, receive path dead, driver reload
+> revives it. *Why* the receive path died is not known.
+>
+> **A root cause published here on Nov 10 ("calibration register
+> wipe") was wrong and is retracted.** The registers it was built on
+> (0x0DA2–0x0DA9, 0x0F80+) are saturating PHY error counters, not
+> calibration storage. **Do not use `0x0DA2:8` all-0xFF as a wedge
+> signature and do not reload on it** — it only means the stick has
+> been up for about an hour. The retracted text is kept, clearly
+> marked, in the [appendix](#appendix-retracted-material-nov-1012);
+> see also [ERRATA](ERRATA.md) #11.
 
 The RTL8188CU/8192CU family has a long-standing field problem: the
 stick silently stops passing traffic and only a driver reload (firmware
@@ -41,71 +27,43 @@ the capture setup, the captured events, the emulator evidence, and the
 standing discriminators. Factual firmware documentation lives in
 [firmware.md](firmware.md).
 
-## First catch: the monitor's maiden capture (Nov 10, 18:02)
+## What the retraction changes
 
-Deployed 15:40, first detection 18:02 — 2 h 22 min later. Full
-sequence, all on tape (evidence in the capture archive):
+The Nov 10 "root cause" rested on a byte-diff between a wedged
+register dump and a healthy one. The cluster that stood out
+(0x0DA2–0x0DA9, 0x0F80–0x0F98, 0x0FA2–0x0FA5, 0x0FB8–0x0FBB) is not
+state the chip stores; it is state the PHY *counts*:
 
-1. **T−34 s**: the driver writes the MAC's CAM/BSSID table — an
-   index loop over 0x0670/0x0674 pairs, the data containing the
-   primary AP's BSSID, plus CR (0x0100) := 0xff02 and 0x0680 := 0xcf.
-   The last driver action before the wipe; RSSI polling continues
-   normally after it (fw H2C alive).
-2. **T−20 s … T0**: the calibration register 0x0DA6 reads all-FF
-   (wiped between two 20 s polls). A *different* domain's register
-   (0x0FB8, a live counter — values incrementing every poll) stays
-   alive for at least another minute: **the wipe is progressive
-   across power domains, not a single event**.
-3. **18:02:26**: the watchdog's own minute-cycle signature check
-   fires (its `0x0DA2:8` view went all-FF) → driver reload. The
-   "Disabling MAC timed out" on unload is now fully explained: the
-   firmware cannot complete the power-down handshake on a chip whose
-   domains are already dead.
-4. **18:02:49**: calmond's poll finds its fd stale (the watchdog's
-   reload re-enumerated the device), captures evidence (its
-   register dump hit the stale fd — fixed in v1.1 to re-find the
-   device and skip double recovery), reloads again, recovered
-   18:03:23. Detection-to-recovery: **34 s**.
+- 0xDA0/0xDA4/0xDA8 are `ROFDM_PHYCOUNTER1/2/3` in the kernel's
+  rtlwifi `reg.h` — 16-bit OFDM error counters (parity, rate-illegal,
+  CRC8, MCS failures). 0xF80+ is the PHY status/report block.
+- On a healthy associated link they climb at roughly 13–20 counts/s
+  and stick at 0xFFFF when full: 65536 ÷ ~13/s ≈ 85 minutes. rtl8xxxu
+  never resets them on this chip.
+- The wedged dump read all-0xFF because that stick had been up for
+  four days; the healthy dump was minutes old. The diff found uptime.
+- The two *healthy* dumps taken one minute apart already differ at
+  exactly these addresses, the later one higher. The falsifying
+  control was in hand and not looked at.
+- "Neither firmware nor driver writes these registers" was true and
+  irrelevant: the PHY hardware writes them.
 
-Net: the causal chain's trigger correlation is now on tape — a
-CAM/BSSID re-programming burst, then domain wipes, with the fw's
-command path alive throughout. The exact domain-loss mechanism
-(why a register write burst precedes domain state loss) remains the
-one open link; the trap is reset for the next event.
+Consequences for everything derived from the "signature":
 
-## Detection and mitigation (the fix)
+| retracted claim | what actually happened |
+|-----------------|------------------------|
+| power domain loses state, registers float to 0xFF | counters saturated |
+| "maiden catch" Nov 10 18:02, CAM burst at T−34 s | 0x0DA6 and 0x0DA8 filled up 11 minutes apart; the CAM write was unrelated driver activity |
+| "progressive cross-domain wipe" | two counters with different rates |
+| "recurring-wipe mode", ~85 min period, started after the provocation | the watchdog reloading a **healthy** link each time the counters filled: 31 times between Nov 10 16:39 and Nov 12 08:51 (journal count), beginning one hour after the check was deployed — *before* the provocation, not after it |
+| provocation experiment "clean negative" | measured nothing; no conclusion about CAM churn either way |
+| "signature marks the end stage, not the onset" | the signature tracks uptime, not RX health |
+| "recovery always works, n≈30" | ~30 reloads of a working stick; says nothing about wedge recovery |
+| "wait 2 min after reload, calibration repopulates" | counters restart from zero |
 
-The wedge signature is readable from userspace over USB with no driver
-support (`tools/regread.py` in this repo; works on Linux 6.18's
-changed usbfs ABI):
-
-    sudo python3 regread.py 0DA2:8
-
-- Healthy: the last 4 bytes hold live calibration values
-  (e.g. `FF FF FF FF 8A 39 D5 31` — the first 4 may read 0xFF healthy).
-- Wedged: **all 8 bytes 0xFF** — the calibration domain has lost
-  state. RX is dead or dying; the 8051 and H2C still answer.
-
-Recovery is an immediate driver reload (`modprobe -r rtl8xxxu;
-modprobe rtl8xxxu` — firmware re-download re-runs calibration; the
-stick recovers in under 10 s).
-
-**Automated prevention**: the capture Pi's watchdog now checks the
-signature every minute *before* the gateway ping — on all-FF it
-reloads the driver and logs `CALIBRATION WIPE DETECTED`. The zombie
-phase lasts days before total RX death, so early detection turns a
-multi-day silent degradation into a self-healing 30-second event.
-Note for implementers: after a reload, wait ~2 min before trusting the
-signature again (calibration repopulates during init).
-
-**Catch-it-live monitor**: `tools/wifi-calmond.py` (deployed on the
-capture Pi as `wifi-calmond.service`) polls the signature every 20 s.
-On first detection it captures evidence *before* recovering — a full
-register dump and a copy of the live usbmon logs (so the wipe-moment
-driver↔firmware conversation cannot rotate away) — then reloads. The
-next wipe will be caught in the act; correlating its onset with the
-captured USB traffic is expected to close the one inferred link in the
-causal chain without any vendor input.
+What is *not* affected: the firmware reference, the Nov 6 event
+analysis, the forced-roam series, and the live fingerprint table
+below — those were read from registers whose meaning is established.
 
 ## Test setup
 
@@ -186,7 +144,7 @@ with stubbed ROM calls and W1C register semantics. Results:
   SPS0 settle poll (firmware.md, "State engines"). Zero field
   confirmation so far; no captured event matches it.
 
-## The Nov 7-10 event: first live-wedged specimen (under investigation)
+## The Nov 7-10 event: first live-wedged specimen (root cause open)
 
 Timeline (router log + kernel + NetworkManager + watchdog, all
 cross-checked): associated since Nov 6 16:00; kernel and NM silent for
@@ -221,11 +179,159 @@ Verdict so far: **every firmware-side suspect is eliminated** — the
 8051 brain is healthy, TX unpaused, filters open, USB control alive —
 while the **receive path is dead between PHY and MAC** (zero BSS
 visible in scans, no beacon processing, yet bulk-in traffic flows with
-unusable frames). Root-cause hunt continues with a baseband-register
-diff against the driver's init tables. The zombie phase now reads as
-the same failure progressing: broadcast RX died first (external
-unreachability with working gateway unicast), then unicast, then all
-RX.
+unusable frames). The follow-up register diff led to the retracted "calibration wipe"
+conclusion (appendix); the cause of the dead receive path is open.
+Reading the zombie phase as the same failure progressing (broadcast
+RX first, then unicast, then all RX) is a hypothesis, not a finding.
+
+## Current monitoring
+
+- **Watchdog** (`wifi-watchdog`, every minute): gateway ping pinned to
+  wlan0; 3 failures → driver reload, 10 → reboot. The signature check
+  is removed.
+- **Passive logger** (`tools/wifi-calmond.py` v2.1, every 30 s, never
+  touches the driver): logs mac80211 station statistics — beacon-rx
+  rate, rx-packet rate, beacon loss, signal — plus the two PHY error
+  counters and the 8051 heartbeat. The station statistics do not
+  saturate and measure the symptom directly; the PHY counters are
+  informative only for the first hour after a (re)load and are logged
+  as `SAT` afterwards. It writes a syslog marker when the stick is
+  associated but beacons stop arriving, to timestamp the onset of a
+  real event against the usbmon capture.
+- **usbmon capture**: unchanged.
+
+## Verdict so far
+
+- One genuine stick-side RX wedge (Nov 10 06:53), fingerprinted live,
+  **mechanism unknown**. The 8051-side suspects that were checked are
+  eliminated (see the fingerprint table); nothing is established about
+  baseband, RF, or the driver.
+- "Reload recovers it" does **not** show the fault is in the firmware:
+  a reload also resets the baseband and RF and reruns calibration.
+- The Nov 7–9 zombie phase (2.5 days externally unreachable while
+  gateway pings from the Pi succeeded) is real and unexplained. Whether
+  it is the same failure as the Nov 10 wedge is a guess.
+- One lab-reproduced failure mode exists (unpausable TX pause) with a
+  real code path behind it and no field event matching it.
+- Everything is n=1: one stick, one host (a Pi 1 on the dwc_otg USB
+  controller), one router. The same stick also failed under the older
+  rtl8192cu driver (46 "AP off" wedges on Nov 1–4), so neither driver
+  is exonerated and neither is the environment.
+
+## Open items
+
+- **Staged recovery on the next real wedge.** Give `regread.py` a
+  write path and, instead of reloading, try in order: baseband reset,
+  recalibration, firmware re-download — and record which step revives
+  RX. This is the experiment that separates firmware from PHY/driver.
+- **A control.** Second stick on the same Pi, or this stick on another
+  host. Cheapest way to split stick / host / environment.
+- **Driver as suspect.** The saturating counters show rtl8xxxu does
+  not service the PHY error counters on this chip; check what gain /
+  false-alarm adaptation it does at all compared with rtlwifi.
+- **RF registers** were never dumped (only MAC and baseband).
+- **Smaller diffs dismissed without a baseline**: 0x0C14/0x0C80 (IQ
+  imbalance results) and the 0x0E9x block differ wedged vs healthy and
+  were called "per-run variance" with no measurement of that variance.
+- **Any future register claim**: look the address up in the kernel
+  drivers' register headers *first*, and diff against a control of
+  equal uptime.
+- Nov 12 daytime: the brief reports a "zombie with valid signature"
+  after the last reload. Not re-examined; "valid signature" carried no
+  information, so this event is unclassified.
+- Nov 5 07:09 event: unresolved (stick-side vs AP-side).
+- MAC-disable timeout during driver unload: it occurred on reloads of
+  a healthy stick (e.g. Nov 12 08:51), so it is routine unload noise,
+  not wedge evidence.
+- RSSI H2C cycle stopped 2 min before the AP-R1 backhaul death on
+  Nov 6, while the link still worked — unexplained driver behavior.
+
+## Appendix: retracted material (Nov 10–12)
+
+**Everything in this appendix is wrong or unsupported** and is kept
+only as a record of what was published. It interprets saturating PHY
+error counters as lost calibration state; see "What the retraction
+changes" above. Do not implement anything described here.
+
+### [RETRACTED] The original "short version"
+
+> **The short version** — after 14 years of unexplained "stick stops
+> working until reload" reports on RTL8188CU/8192CU hardware, this
+> investigation caught, interrogated, and explained one live:
+> a skipped power-state transition leaves a chip power domain
+> isolated; its **RX calibration registers float to 0xFF**; the stick
+> demodulates garbage while its 8051 keeps running happily. Detection:
+> read `0x0DA2:8` over USB — the wedge reads all-0xFF (healthy sticks
+> hold values in the low 4 bytes). Fix: reload the driver, or better,
+> detect early and reload automatically. Full chain below.
+
+### [RETRACTED] First catch: the monitor's maiden capture (Nov 10, 18:02)
+
+Deployed 15:40, first detection 18:02 — 2 h 22 min later. Full
+sequence, all on tape (evidence in the capture archive):
+
+1. **T−34 s**: the driver writes the MAC's CAM/BSSID table — an
+   index loop over 0x0670/0x0674 pairs, the data containing the
+   primary AP's BSSID, plus CR (0x0100) := 0xff02 and 0x0680 := 0xcf.
+   The last driver action before the wipe; RSSI polling continues
+   normally after it (fw H2C alive).
+2. **T−20 s … T0**: the calibration register 0x0DA6 reads all-FF
+   (wiped between two 20 s polls). A *different* domain's register
+   (0x0FB8, a live counter — values incrementing every poll) stays
+   alive for at least another minute: **the wipe is progressive
+   across power domains, not a single event**.
+3. **18:02:26**: the watchdog's own minute-cycle signature check
+   fires (its `0x0DA2:8` view went all-FF) → driver reload. The
+   "Disabling MAC timed out" on unload is now fully explained: the
+   firmware cannot complete the power-down handshake on a chip whose
+   domains are already dead.
+4. **18:02:49**: calmond's poll finds its fd stale (the watchdog's
+   reload re-enumerated the device), captures evidence (its
+   register dump hit the stale fd — fixed in v1.1 to re-find the
+   device and skip double recovery), reloads again, recovered
+   18:03:23. Detection-to-recovery: **34 s**.
+
+Net: the causal chain's trigger correlation is now on tape — a
+CAM/BSSID re-programming burst, then domain wipes, with the fw's
+command path alive throughout. The exact domain-loss mechanism
+(why a register write burst precedes domain state loss) remains the
+one open link; the trap is reset for the next event.
+
+### [RETRACTED] Detection and mitigation
+
+The wedge signature is readable from userspace over USB with no driver
+support (`tools/regread.py` in this repo; works on Linux 6.18's
+changed usbfs ABI):
+
+    sudo python3 regread.py 0DA2:8
+
+- Healthy: the last 4 bytes hold live calibration values
+  (e.g. `FF FF FF FF 8A 39 D5 31` — the first 4 may read 0xFF healthy).
+- Wedged: **all 8 bytes 0xFF** — the calibration domain has lost
+  state. RX is dead or dying; the 8051 and H2C still answer.
+
+Recovery is an immediate driver reload (`modprobe -r rtl8xxxu;
+modprobe rtl8xxxu` — firmware re-download re-runs calibration; the
+stick recovers in under 10 s).
+
+**Automated prevention**: the capture Pi's watchdog now checks the
+signature every minute *before* the gateway ping — on all-FF it
+reloads the driver and logs `CALIBRATION WIPE DETECTED`. The zombie
+phase lasts days before total RX death, so early detection turns a
+multi-day silent degradation into a self-healing 30-second event.
+Note for implementers: after a reload, wait ~2 min before trusting the
+signature again (calibration repopulates during init).
+
+**Catch-it-live monitor**: `tools/wifi-calmond.py` (deployed on the
+capture Pi as `wifi-calmond.service`) polls the signature every 20 s.
+On first detection it captures evidence *before* recovering — a full
+register dump and a copy of the live usbmon logs (so the wipe-moment
+driver↔firmware conversation cannot rotate away) — then reloads. The
+next wipe will be caught in the act; correlating its onset with the
+captured USB traffic is expected to close the one inferred link in the
+causal chain without any vendor input.
+
+### [RETRACTED] Root-cause closure, causal chain, provocation, recurring-wipe mode
 
 **Root-cause closure (Nov 10 afternoon):** the driver was reloaded
 from the Ethernet path — recovery in under 10 s (auth + assoc + IP on
@@ -311,22 +417,3 @@ succeeded over the Ethernet lifeline, masking WiFi death (12 h outage)
 triggered the recurring mode (the provocation's proximity is
 suspicious), and why it stopped. A 120-cycle provocation remains the
 planned next stress test.
-
-## Firmware verdict so far
-
-Every captured event is explained by the environment. The firmware
-survived every on-demand stress (five forced roams, back-to-back). One
-lab-reproduced failure mode exists (unpausable TX pause) with a real
-code path behind it, and one field event (Nov 5 07:09) remains open.
-Passive collection continues with the discriminator above.
-
-## Open items
-
-- Nov 5 07:09 event: unresolved (stick-side vs AP-side).
-- MAC-disable timeout during driver unload: confirm it occurs on every
-  clean unload (would fully devalue it as wedge evidence).
-- RSSI H2C cycle stopped 2 min before the AP-R1 backhaul death on
-  Nov 6, while the link still worked — unexplained driver behavior.
-- Optionally: a driver-side workaround prototype (force the firmware
-  mode-switch to re-run after every roam), only if a firmware-side
-  wedge is ever confirmed.

@@ -66,8 +66,9 @@ for transparency; each entry cites the final correct state.
     review (2026-11-12) showed they are 16-bit OFDM PHY error
     counters (ROFDM_PHYCOUNTER1/2/3) saturating at 0xFFFF after ~1 h
     — the "no software writer" proof was vacuous because the PHY
-    hardware writes them. The signature-based auto-reload fired 35
-    times on a healthy link. Root cause of the real Nov 10 wedge is
+    hardware writes them. The signature-based auto-reload fired 31
+    times on a healthy link (watchdog journal, Nov 10 16:39 – Nov 12
+    08:51; first reported as 35, a miscount). Root cause of the real Nov 10 wedge is
     open again. Lesson recorded: the "name the cluster via the
     datasheet" step flagged as optional was the cheap falsification
     that would have prevented this.
