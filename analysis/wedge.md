@@ -277,6 +277,23 @@ cadence observed on Nov 9 — which host-side activity neither triggers
 nor prevents. Passive capture with the v1.2 kit remains the path; each
 natural incident now yields a full pre-reload register snapshot.
 
+**Nov 11–12: recurring-wipe mode + two detector blind spots found
+and fixed.** Starting 15 minutes after the 40-cycle provocation ended
+(Nov 11 00:15) and running ~31 h at a remarkably regular **~85-minute
+period**, the stick entered a recurring-wipe mode: 21 signature fires,
+each caught by the watchdog and recovered by reload. At ~07:27 Nov 12
+the wipes stopped — leaving a *zombie* state: RX dead (0 BSS on scan)
+with the calibration signature still valid and the 8051 heartbeating.
+**The signature marks the end stage, not the onset** — RX dies before
+0x0DA6 wipes. Two monitoring gaps surfaced and were fixed: (1) calmond
+kept a stale USB fd after each reload and read 0xEA (= "healthy") —
+now reopens the device every poll; (2) the watchdog's gateway ping
+succeeded over the Ethernet lifeline, masking WiFi death (12 h outage)
+— now pins the ping to wlan0 when eth0 carries. Open questions: what
+triggered the recurring mode (the provocation's proximity is
+suspicious), and why it stopped. A 120-cycle provocation remains the
+planned next stress test.
+
 ## Firmware verdict so far
 
 Every captured event is explained by the environment. The firmware
