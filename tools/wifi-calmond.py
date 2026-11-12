@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""wifi-calmond — high-frequency calibration-wipe monitor for
-RTL8188CU/8192CU sticks (the 2026-11-10 discovery, see
-analysis/wedge.md in the rtl8192cu-fw project).
+"""wifi-calmond v2.0 — passive PHY-counter logger for RTL8188CU sticks.
 
-Polls the RX-calibration signature registers over USB every POLL_S
-seconds. The firmware never writes these; all-0xFF means the
-calibration power domain lost state and RX is dead or dying
-(the "zombie" degradation lasts days before total failure).
+RETRACTION (2026-11-12): v1.x treated all-0xFF at 0x0DA2-0x0DA9 /
+0x0FB8 as a "calibration wipe signature" and reloaded the driver on
+it. Those registers are 16-bit OFDM PHY error counters
+(rtlwifi: ROFDM_PHYCOUNTER1/2/3 at 0xDA0/0xDA4/0xDA8, plus the PHY
+status block at 0xF80+). They tick at 10-20/s on an associated stick
+and saturate at 0xFFFF after roughly an hour. The v1 "signature" was
+a clock, and the v1 reload loop reloaded healthy links every ~85 min.
 
-On first detection it captures evidence (full 0x0000-0x0FFF register
-dump + a copy of the current usbmon logs before they rotate), then
-recovers: reload the wifi driver and re-activate the connection.
+v2.0 never touches the driver. It passively samples the counters and
+logs rate summaries, so a future real RX wedge (see wedge.md: Nov 10
+06:53 event — fw alive, H2C answering, RX dead, reload recovers,
+root cause OPEN) can be correlated with counter behaviour. Read
+errors are logged, never acted on.
 
-Runs as a systemd service (Restart=always). Stdlib only; reuses
-regread.py when installed alongside it.
+Runs as a systemd service. Stdlib only; requires regread.py alongside.
 """
 import os
 import subprocess
@@ -21,132 +23,64 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-try:
-    from regread import ctrl_read, find_device          # installed copy
-except ImportError:
-    sys.exit('regread.py must be installed alongside wifi-calmond')
+from regread import ctrl_read, find_device
 
-POLL_S = 10
-GRACE_S = 120                     # post-reload wait before trusting regs
-EVIDENCE_DIR = '/var/log/wifi-calmond'
-STAMP = '/run/wifi-calmond.lastreload'
-# signature registers: (addr, length); wiped = all-FF in the read
-SIG_REGS = ((0x0DA6, 4), (0x0FB8, 4))
+POLL_S = 30
+COUNTERS = (0x0DA6, 0x0DA8)      # 16-bit little-endian at these addrs
+LOG = '/var/log/wifi-calmond/counters.log'
 
 
 def log(msg):
     subprocess.run(['logger', '-t', 'wifi-calmond', msg], check=False)
 
 
-def healthy(fd):
-    for reg, n in SIG_REGS:
-        try:
-            data = ctrl_read(fd, reg, n, timeout_ms=2000)
-        except OSError:
-            return False                       # usb error: not a verdict
-        if not data or any(b != 0xFF for b in data):
-            return True                        # holds values -> healthy
-    return False
-
-
-PRIORITY_REGS = (0x01C4, 0x01CC, 0x0130, 0x0134, 0x013C,
-                 0x0522, 0x0608, 0x06A0, 0x0DA2, 0x0DA6, 0x0FB8)
-
-
-def capture_evidence(fd):
-    ts = int(time.time())
-    d = f'{EVIDENCE_DIR}/wipe-{ts}'
-    os.makedirs(d, exist_ok=True)
-    # priority regs first: the device can die deeper mid-dump
-    with open(f'{d}/priority-regs.txt', 'w') as f:
-        for reg in PRIORITY_REGS:
-            try:
-                data = ctrl_read(fd, reg, 8, timeout_ms=2000)
-            except OSError:
-                data = b''
-            f.write(f'0x{reg:04X}: ' + ' '.join(f'{b:02X}' for b in data) + '\n')
-    with open(f'{d}/regs-0000-1000.txt', 'w') as f:
-        addr = 0
-        while addr < 0x1000:
-            try:
-                chunk = ctrl_read(fd, addr, 8, timeout_ms=2000)
-            except OSError:
-                chunk = b'\xea' * 8
-            f.write(f'{addr:04X}: ' + ' '.join(f'{b:02X}' for b in chunk) + '\n')
-            addr += 8
-    subprocess.run(['sh', '-c',
-                    f'cp /var/log/usbmon-wifi.log* "{d}/" 2>/dev/null'],
-                   check=False)
-    log(f'evidence captured in {d} (regs + usbmon snapshot)')
-
-
-def recover():
-    log('CALIBRATION WIPE DETECTED - capturing evidence, then reloading')
-    drv = subprocess.run(
-        ['sh', '-c',
-         'basename "$(readlink -f /sys/class/net/wlan0/device/driver/module 2>/dev/null)"'],
-        capture_output=True, text=True).stdout.strip()
-    if drv and drv != '.':
-        subprocess.run(['modprobe', '-r', drv], check=False)
-        time.sleep(3)
-        subprocess.run(['modprobe', drv], check=False)
-        time.sleep(15)
-    subprocess.run(['sh', '-c',
-                    "nmcli -t -f NAME,TYPE connection show | awk -F: '$2==\"802-11-wireless\"{print $1}' | while read c; do nmcli connection up \"$c\" >/dev/null 2>&1 && break; done"],
-                   check=False)
-    with open(STAMP, 'w') as f:
-        f.write(str(int(time.time())))
-    log('driver reloaded after calibration wipe')
+def read16(fd, reg):
+    try:
+        d = ctrl_read(fd, reg, 2, timeout_ms=2000)
+        return (d[1] << 8) | d[0] if len(d) == 2 else None
+    except OSError:
+        return None
 
 
 def main():
-    path, _, _ = find_device(None, None)
-    if not path:
-        log('no Realtek stick found on USB - monitoring disabled')
-        time.sleep(POLL_S)
-        return
-    fd = os.open(path, os.O_RDWR)
-    last_hour = -1
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
     while True:
-        now = int(time.time())
-        in_grace = False
-        if os.path.exists(STAMP):
-            try:
-                with open(STAMP) as f:
-                    in_grace = now - int(f.read().strip() or 0) < GRACE_S
-            except (ValueError, OSError):
-                in_grace = False
-        if not in_grace:
-            try:
-                if not healthy(fd):
-                    # re-find: another actor (watchdog) may have reloaded
-                    # already; reading a stale fd yields garbage evidence
-                    p2, _, _ = find_device(None, None)
-                    if p2 != path:
-                        log('device instance changed - another actor '
-                            'reloaded; refreshing, no double recovery')
-                        os.close(fd)
-                        path = p2
-                        if path:
-                            fd = os.open(path, os.O_RDWR)
-                    else:
-                        capture_evidence(fd)
-                        os.close(fd)
-                        recover()
-                        path, _, _ = find_device(None, None)
-                        if path:
-                            fd = os.open(path, os.O_RDWR)
-            except OSError:
-                try:
-                    path, _, _ = find_device(None, None)
-                    if path:
-                        fd = os.open(path, os.O_RDWR)
-                except OSError:
-                    pass                                # device blinked
-        if time.localtime().tm_hour != last_hour:
-            last_hour = time.localtime().tm_hour
-            log('monitor alive, signature ok' )
+        path, _, _ = find_device(None, None)
+        if not path:
+            log('no stick on USB; waiting')
+            time.sleep(POLL_S)
+            continue
+        try:
+            fd = os.open(path, os.O_RDWR)
+        except OSError:
+            time.sleep(POLL_S)
+            continue
+        t0 = time.time()
+        v0 = {r: read16(fd, r) for r in COUNTERS}
+        os.close(fd)
         time.sleep(POLL_S)
+        path, _, _ = find_device(None, None)
+        if not path or None in v0.values():
+            continue
+        try:
+            fd = os.open(path, os.O_RDWR)
+        except OSError:
+            continue
+        t1 = time.time()
+        v1 = {r: read16(fd, r) for r in COUNTERS}
+        os.close(fd)
+        if None in v1.values():
+            log('counter read failed once (passive, no action)')
+            continue
+        with open(LOG, 'a') as f:
+            for r in COUNTERS:
+                dt, dv = t1 - t0, v1[r] - v0[r]
+                rate = dv / dt if dt else 0
+                f.write(f'{t0:.0f} 0x{r:04X} {v0[r]:04X}->{v1[r]:04X} '
+                        f'{rate:.1f}/s\n')
+        # hourly summary so silence never looks like health
+        if time.localtime().tm_min < 1:
+            log('passive logger alive')
 
 
 if __name__ == '__main__':

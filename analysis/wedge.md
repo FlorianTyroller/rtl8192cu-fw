@@ -6,6 +6,24 @@ redirect_from:
 
 # The wedge investigation
 
+> **RETRACTED 2026-11-12 (external review): the "calibration wipe"
+> root cause is wrong.** The registers at 0x0DA2-0x0DA9 and 0x0F80+
+> are 16-bit OFDM PHY error counters (rtlwifi: ROFDM_PHYCOUNTER1/2/3),
+> ticking 10-20/s on an associated stick and saturating at 0xFFFF
+> after ~1 h. The "wipe signature" was a clock; the "recurring wipe
+> mode" was the watchdog reloading a healthy link every ~85 min (35
+> times); the "progressive cross-domain wipe" was counters saturating
+> at different rates; the register "diff" compared days of uptime
+> against minutes. Verified against rtlwifi reg.h, minute-apart
+> healthy dumps, and live counter reads. **What survives:** the Nov 10
+> 06:53 event is a real RX wedge (fw alive, H2C answering, 0 BSS for
+> hours, reload recovers) — its root cause is OPEN again. The Nov 7-9
+> zombie phase (externally verified 2.5-day one-way unreachability)
+> also stands, mechanism unknown. The signature check has been removed
+> from the Pi (monitoring is now a passive counter-rate logger,
+> wifi-calmond v2.0); PHY-counter saturation rate may yet serve as an
+> early detector — as telemetry, never as a reload trigger.
+
 > **The short version** — after 14 years of unexplained "stick stops
 > working until reload" reports on RTL8188CU/8192CU hardware, this
 > investigation caught, interrogated, and explained one live:

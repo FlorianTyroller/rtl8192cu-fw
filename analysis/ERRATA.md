@@ -59,3 +59,15 @@ for transparency; each entry cites the final correct state.
     generic-pointer read (register read only in the null-pointer
     special case); 0x435F is `DPTR += A*B`. Several first-pass
     "register accesses" inside H2C handlers are param-block reads.
+
+11. **"Calibration wipe" root cause (Nov 10–12).** The all-0xFF
+    cluster at 0x0DA2-0x0DA9/0x0F80+ was interpreted as power-domain
+    state loss because no software writes those registers. External
+    review (2026-11-12) showed they are 16-bit OFDM PHY error
+    counters (ROFDM_PHYCOUNTER1/2/3) saturating at 0xFFFF after ~1 h
+    — the "no software writer" proof was vacuous because the PHY
+    hardware writes them. The signature-based auto-reload fired 35
+    times on a healthy link. Root cause of the real Nov 10 wedge is
+    open again. Lesson recorded: the "name the cluster via the
+    datasheet" step flagged as optional was the cheap falsification
+    that would have prevented this.
