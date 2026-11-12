@@ -1,2 +1,4 @@
 plugins:
   - jekyll-redirect-from
+exclude:
+  - CLAUDE.md
