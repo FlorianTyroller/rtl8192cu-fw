@@ -187,8 +187,21 @@ RX first, then unicast, then all RX) is a hypothesis, not a finding.
 ## Current monitoring
 
 - **Watchdog** (`wifi-watchdog`, every minute): gateway ping pinned to
-  wlan0; 3 failures → driver reload, 10 → reboot. The signature check
-  is removed.
+  wlan0. **While the Ethernet lifeline is connected it only logs**
+  (since 2026-11-25); without it, 3 failures → driver reload, 10 →
+  reboot. The signature check is removed. Reason for the log-only
+  mode: from Nov 12 to Nov 25 the pinned ping failed in 663 episodes
+  (205 reloads), and in 657 of them the passive logger shows the stick
+  associated and receiving ~9 beacons/s. Those reloads reset the stick
+  repeatedly, so **Nov 12–25 gives no usable wedge-frequency data**.
+  The failures cluster at :05/:35 past the hour; why is open (the :35
+  ones follow the router's hourly group-key renewal in 155 of 292
+  cases — a correlation, not a mechanism).
+- **ARP**: the Pi answered ARP for its WiFi address on its Ethernet
+  port, so LAN traffic to the WiFi address went over the cable. Fixed
+  2026-11-25 (`arp_ignore=1`, `arp_announce=2`); verified from another
+  LAN host. Any "reachable from outside" observation made while the
+  cable was in (since Nov 9) did not test the WiFi path.
 - **Passive logger** (`tools/wifi-calmond.py` v2.1, every 30 s, never
   touches the driver): logs mac80211 station statistics — beacon-rx
   rate, rx-packet rate, beacon loss, signal — plus the two PHY error
@@ -239,6 +252,11 @@ RX first, then unicast, then all RX) is a hypothesis, not a finding.
 - Nov 12 daytime: the brief reports a "zombie with valid signature"
   after the last reload. Not re-examined; "valid signature" carried no
   information, so this event is unclassified.
+- **Nov 18 13:06–13:14 (observed, n=1):** beacons fell from ~9/s to
+  ~1.5/s with 86 beacon losses while associated, 8051 heartbeat alive;
+  recovered on its own without a reload. The first partial-RX episode
+  with full passive logging. Cause unknown; the ping watchdog did not
+  notice it.
 - Nov 5 07:09 event: unresolved (stick-side vs AP-side).
 - MAC-disable timeout during driver unload: it occurred on reloads of
   a healthy stick (e.g. Nov 12 08:51), so it is routine unload noise,
