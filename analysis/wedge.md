@@ -184,6 +184,50 @@ conclusion (appendix); the cause of the dead receive path is open.
 Reading the zombie phase as the same failure progressing (broadcast
 RX first, then unicast, then all RX) is a hypothesis, not a finding.
 
+## The Nov 25 event: second live-wedged specimen (root cause open)
+
+Observations from one event (n=1); nothing here is a cause.
+
+- **Onset:** at 20:47 AP-P deauthenticated the stick (reason 4,
+  inactivity). For the next 3.5 h all 865 authentication attempts, to
+  all three APs, went unanswered. No automatic reload ran (watchdog
+  log-only), so the stick was interrogated still wedged; a manual
+  driver reload at 00:20 recovered it on the first authentication.
+- **Before the onset:** the median beacon rate fell from 8.7/s
+  (16:00–19:00) to 7.4/s (19:00) and 6.8/s (20:00). Whether this is a
+  precursor is untested.
+- **8051 side, as on Nov 10:** heartbeat toggling, mailbox idle, TX not
+  paused, RX filters open.
+- **Unlike Nov 10, receive worked:** scans listed 8 BSSs with plausible
+  signal levels (AP-P −40 dBm, neighbouring networks −57…−88 dBm),
+  last seen 7–14 s earlier, and bulk-in traffic kept arriving.
+- **Transmit, host side, looked normal:** every bulk-out transfer to
+  the stick completed, and the management-frame TX descriptors were
+  byte-identical to the healthy period. Data-frame counters stayed
+  frozen.
+- **Hypothesis:** frames are accepted by the chip but do not reach the
+  air, or reach it undecodable. Settling this needs an independent
+  sniffer on the channel during an event.
+- **Register comparison** (3 wedged, 3 healthy dumps, plus the Nov 10
+  set). After removing live counters, the saturating PHY counters,
+  values the driver writes while scanning, and command remnants, six
+  addresses hold one value in all four wedged dumps (two events) that
+  never appears in five healthy dumps:
+  - 0x0403 and 0x040B (byte 3 of the VO/BE queue information
+    registers; bit fields unnamed in both kernel drivers): FF vs 00.
+  - 0x013C (timer-interrupt block): E0 vs 00.
+  - 0x06B8 (unnamed), 0x001D, 0x0126.
+
+  Every wedged dump was taken while disconnected and scanning, and no
+  healthy dump exists in that state, so these may reflect state rather
+  than the wedge.
+- **RF registers** (path A, 0x00–0x3F) were read for the first time,
+  while wedged, with `tools/rfread.py`, which repeats the driver's own
+  3-wire read sequence. There is no healthy RF baseline yet.
+
+Evidence (local, not in the repo): `~/wedge-captures/20261125-2047-wedge/`
+with a SUMMARY.md.
+
 ## Current monitoring
 
 - **Watchdog** (`wifi-watchdog`, every minute): gateway ping pinned to
@@ -233,6 +277,10 @@ RX first, then unicast, then all RX) is a hypothesis, not a finding.
 
 ## Open items
 
+- **Nov 25 follow-ups:** a healthy RF baseline (rfread writes 0x0824
+  the way the driver does, so it needs the user's OK on a healthy
+  stick); a healthy register dump while disconnected and scanning, to
+  test the six candidates; a sniffer during the next event.
 - **Staged recovery on the next real wedge.** Give `regread.py` a
   write path and, instead of reloading, try in order: baseband reset,
   recalibration, firmware re-download — and record which step revives
