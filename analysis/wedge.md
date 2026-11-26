@@ -208,24 +208,34 @@ Observations from one event (n=1); nothing here is a cause.
 - **Hypothesis:** frames are accepted by the chip but do not reach the
   air, or reach it undecodable. Settling this needs an independent
   sniffer on the channel during an event.
-- **Register comparison** (3 wedged, 3 healthy dumps, plus the Nov 10
-  set). After removing live counters, the saturating PHY counters,
-  values the driver writes while scanning, and command remnants, six
-  addresses hold one value in all four wedged dumps (two events) that
-  never appears in five healthy dumps:
-  - 0x0403 and 0x040B (byte 3 of the VO/BE queue information
-    registers; bit fields unnamed in both kernel drivers): FF vs 00.
-  - 0x013C (timer-interrupt block): E0 vs 00.
-  - 0x06B8 (unnamed), 0x001D, 0x0126.
+- **Register comparison** (wedged: 3 dumps Nov 25 + 1 dump Nov 10;
+  healthy: 3 dumps 2 min after the reload, the two Nov 10 dumps, and on
+  Nov 26 — about 1 h after the reload — 3 dumps associated plus 3
+  dumps disconnected while scanning). Live counters, the saturating PHY
+  counters, values the driver itself writes per state (0x0824, 0x0884,
+  0x08B8, 0x0E08–0x0E0B: the same writes appear in usbmon during the
+  healthy scanning control) and command remnants (0x0088) are excluded.
+  - Six candidates from the first pass dropped to **two**. 0x0403,
+    0x040B, 0x013C and 0x0126 show the "wedged" values (FF, FF, E0,
+    07) on the healthy stick one hour after the reload, associated and
+    scanning alike. They change with uptime; the first healthy dumps
+    were taken too soon after the reload to be a control.
+  - Still different in every wedged dump and no healthy one: 0x06B8
+    (unnamed; 03 vs 00) and 0x001D (byte 1 of REG_RSV_CTRL, bit 4
+    unnamed; 21 vs 31). n=2 events, meaning unknown. Neither was
+    checked for drift over hours on a healthy stick.
+- **RF registers** (path A, 0x00–0x3F, `tools/rfread.py`, which
+  repeats the driver's own 3-wire read sequence; 3 passes each). Wedged
+  (Nov 25, channel 11) vs healthy associated (Nov 26, channel 11): all
+  equal except RF 0x00 (moves between passes) and RF 0x07
+  (RF6052_REG_GAIN_TX in rtl8xxxu_regs.h; wedged 4A400, healthy
+  4C000). RF 0x07 is not in the driver's radio init table and also
+  differs in the healthy scanning control (2A800, taken on channel 1),
+  so it varies with state on its own. One wedged reading; not a
+  candidate until it is seen again in a wedge and its healthy range is
+  known.
 
-  Every wedged dump was taken while disconnected and scanning, and no
-  healthy dump exists in that state, so these may reflect state rather
-  than the wedge.
-- **RF registers** (path A, 0x00–0x3F) were read for the first time,
-  while wedged, with `tools/rfread.py`, which repeats the driver's own
-  3-wire read sequence. There is no healthy RF baseline yet.
-
-Evidence (local, not in the repo): `~/wedge-captures/20261125-2047-wedge/`
+Evidence (local, not in the repo): `~/wedge-captures/20261125-2047-wedge/` and `~/wedge-captures/20261126-controls/`
 with a SUMMARY.md.
 
 ## Current monitoring
@@ -277,10 +287,11 @@ with a SUMMARY.md.
 
 ## Open items
 
-- **Nov 25 follow-ups:** a healthy RF baseline (rfread writes 0x0824
-  the way the driver does, so it needs the user's OK on a healthy
-  stick); a healthy register dump while disconnected and scanning, to
-  test the six candidates; a sniffer during the next event.
+- **Nov 25 follow-ups:** healthy RF baseline and the disconnected/
+  scanning control were taken on Nov 26 (see the Nov 25 section). Left:
+  repeat the register and RF reads on the next wedge (do 0x06B8,
+  0x001D, RF 0x07 recur?), and if possible capture a healthy dump at
+  the same uptime as the wedged one. No sniffer is available for now.
 - **Staged recovery on the next real wedge.** Give `regread.py` a
   write path and, instead of reloading, try in order: baseband reset,
   recalibration, firmware re-download — and record which step revives
